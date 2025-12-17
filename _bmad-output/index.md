@@ -67,10 +67,21 @@
 ### 外部資源
 
 - **官方網站**：https://slurm.schedmd.com/
+- **完整文件索引**：https://slurm.schedmd.com/documentation.html
 - **管理員指南**：https://slurm.schedmd.com/quickstart_admin.html
 - **使用者指南**：https://slurm.schedmd.com/quickstart.html
 - **API 參考**：https://slurm.schedmd.com/api.html
 - **問題追蹤**：https://support.schedmd.com/
+
+### 依角色分類的官方文件
+
+詳細的官方文件連結請參考各角色指南中的「官方文件參考」章節：
+
+| 角色 | 本地指南 | 官方文件數量 |
+|------|----------|--------------|
+| 使用者 | [使用者指南](./user-guide.md#官方文件參考) | 14+ 篇文件 |
+| 管理員 | [管理員指南](./admin-guide.md#官方文件參考) | 40+ 篇文件 |
+| 開發者 | [開發者指南](./developer-guide.md#官方文件參考) | 12+ 篇文件 |
 
 ---
 

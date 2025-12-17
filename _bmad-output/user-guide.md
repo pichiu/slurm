@@ -472,8 +472,112 @@ squeue --help
 
 ---
 
+## 進階主題
+
+以下為進階功能，詳細說明請參考官方文件。
+
+### 異質作業（Heterogeneous Jobs）
+
+在單一作業中使用不同配置的節點：
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=hetero
+#SBATCH hetjob
+#SBATCH --ntasks=4 --cpus-per-task=1
+#SBATCH hetjob
+#SBATCH --ntasks=2 --cpus-per-task=8 --gres=gpu:1
+
+srun --het-group=0 ./cpu_worker &
+srun --het-group=1 ./gpu_worker &
+wait
+```
+
+📖 詳見：[異質作業支援](https://slurm.schedmd.com/heterogeneous_jobs.html)
+
+### 多叢集操作
+
+跨多個 Slurm 叢集提交和管理作業：
+
+```bash
+# 檢視所有叢集
+sacctmgr show clusters
+
+# 提交到特定叢集
+sbatch --cluster=cluster2 job.sh
+
+# 檢視所有叢集的作業
+squeue --clusters=all
+```
+
+📖 詳見：[多叢集操作](https://slurm.schedmd.com/multi_cluster.html)
+
+### 資源綁定
+
+控制程序與 CPU、記憶體的綁定：
+
+```bash
+#SBATCH --cpu-bind=cores       # 綁定到核心
+#SBATCH --mem-bind=local       # 使用本地記憶體
+```
+
+📖 詳見：[資源綁定](https://slurm.schedmd.com/resource_binding.html)
+
+### HDF5 效能分析
+
+收集作業執行的效能資料：
+
+```bash
+#SBATCH --profile=all          # 啟用所有效能分析
+```
+
+📖 詳見：[HDF5 效能分析使用指南](https://slurm.schedmd.com/hdf5_profile_user_guide.html)
+
+### 作業退出碼
+
+| 退出碼 | 說明 |
+|--------|------|
+| 0 | 成功 |
+| 1-127 | 應用程式錯誤 |
+| 128+N | 被訊號 N 終止 |
+| 特殊碼 | Slurm 特定錯誤 |
+
+📖 詳見：[作業退出碼](https://slurm.schedmd.com/job_exit_code.html)
+
+### 其他排程器對照（Rosetta Stone）
+
+如果您從其他工作負載管理器遷移，可參考指令對照表：
+
+📖 詳見：[工作負載管理器 Rosetta Stone](https://slurm.schedmd.com/rosetta.html)
+
+---
+
+## 官方文件參考
+
+以下連結指向 Slurm 官方文件，提供更詳細的說明：
+
+### 使用者文件
+- [快速入門指南](https://slurm.schedmd.com/quickstart.html)
+- [指令摘要（PDF）](https://slurm.schedmd.com/pdfs/summary.pdf)
+- [Man Pages 索引](https://slurm.schedmd.com/man_index.html)
+- [陣列作業支援](https://slurm.schedmd.com/job_array.html)
+- [異質作業支援](https://slurm.schedmd.com/heterogeneous_jobs.html)
+- [CPU 管理指南](https://slurm.schedmd.com/cpu_management.html)
+- [MPI 和 UPC 使用指南](https://slurm.schedmd.com/mpi_guide.html)
+- [多核心/多執行緒支援](https://slurm.schedmd.com/mc_support.html)
+- [多叢集操作](https://slurm.schedmd.com/multi_cluster.html)
+- [HDF5 效能分析](https://slurm.schedmd.com/hdf5_profile_user_guide.html)
+- [作業原因代碼](https://slurm.schedmd.com/job_reason_codes.html)
+- [作業狀態代碼](https://slurm.schedmd.com/job_state_codes.html)
+- [作業退出碼](https://slurm.schedmd.com/job_exit_code.html)
+- [資源綁定](https://slurm.schedmd.com/resource_binding.html)
+
+---
+
 ## 相關文件
 
 - [專案概覽](./project-overview.md) - Slurm 系統概述
 - [架構文件](./architecture.md) - 系統架構說明
 - [API 契約](./api-contracts.md) - REST API 使用
+- [管理員指南](./admin-guide.md) - 系統管理員文件
+- [開發者指南](./developer-guide.md) - 開發者文件

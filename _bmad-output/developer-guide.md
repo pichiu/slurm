@@ -589,6 +589,159 @@ Bug: 12345 (如果有相關的 bug 編號)
 
 ---
 
+## 進階外掛開發
+
+以下為進階外掛開發主題，詳細說明請參考官方文件。
+
+### CLI Filter 外掛
+
+過濾或修改命令列工具的行為：
+
+```c
+// cli_filter/myfilter.c
+#include "slurm/slurm.h"
+
+const char plugin_name[] = "CLI Filter Plugin";
+const char plugin_type[] = "cli_filter/myfilter";
+const uint32_t plugin_version = SLURM_VERSION_NUMBER;
+
+extern int cli_filter_setup_defaults(slurm_opt_t *opt, bool early)
+{
+    // 設定預設值
+    return SLURM_SUCCESS;
+}
+
+extern int cli_filter_pre_submit(slurm_opt_t *opt, int offset)
+{
+    // 提交前過濾
+    return SLURM_SUCCESS;
+}
+
+extern int cli_filter_post_submit(int offset, uint32_t job_id,
+                                   uint32_t step_id)
+{
+    // 提交後處理
+    return SLURM_SUCCESS;
+}
+```
+
+📖 詳見：[CLI Filter 外掛程式設計指南](https://slurm.schedmd.com/cli_filter_plugins.html)
+
+### PrEp（Prologue/Epilogue）外掛
+
+作業生命週期鉤子：
+
+```c
+// prep/myprep.c
+#include "slurm/slurm.h"
+
+const char plugin_name[] = "PrEp Plugin";
+const char plugin_type[] = "prep/myprep";
+const uint32_t plugin_version = SLURM_VERSION_NUMBER;
+
+extern int prep_p_prolog(job_env_t *job_env, slurm_cred_t *cred)
+{
+    // 作業開始前執行
+    return SLURM_SUCCESS;
+}
+
+extern int prep_p_epilog(job_env_t *job_env, slurm_cred_t *cred)
+{
+    // 作業結束後執行
+    return SLURM_SUCCESS;
+}
+
+extern int prep_p_prolog_slurmctld(job_record_t *job_ptr,
+                                    job_env_t *job_env)
+{
+    // 控制器端作業開始前
+    return SLURM_SUCCESS;
+}
+
+extern int prep_p_epilog_slurmctld(job_record_t *job_ptr,
+                                    job_env_t *job_env)
+{
+    // 控制器端作業結束後
+    return SLURM_SUCCESS;
+}
+```
+
+📖 詳見：[PrEp 外掛程式設計指南](https://slurm.schedmd.com/prep_plugins.html)
+
+### Site Factor（優先級）外掛
+
+自訂作業優先級計算：
+
+```c
+// site_factor/myfactor.c
+#include "slurm/slurm.h"
+
+const char plugin_name[] = "Site Factor Plugin";
+const char plugin_type[] = "site_factor/myfactor";
+const uint32_t plugin_version = SLURM_VERSION_NUMBER;
+
+extern void site_factor_p_set(job_record_t *job_ptr)
+{
+    // 計算並設定作業的 site_factor
+    // 影響作業優先級
+    job_ptr->site_factor = calculate_factor(job_ptr);
+}
+
+extern void site_factor_p_update(void)
+{
+    // 定期更新所有作業的 site_factor
+}
+```
+
+📖 詳見：[Site Factor 外掛程式設計指南](https://slurm.schedmd.com/site_factor.html)
+
+### 設計文件
+
+深入了解 Slurm 內部設計：
+
+| 主題 | 說明 |
+|------|------|
+| GRES 設計 | 通用資源處理架構 |
+| 作業啟動設計 | 作業執行流程 |
+| Select 外掛設計 | 資源選擇演算法 |
+
+📖 詳見：
+- [GRES 設計指南](https://slurm.schedmd.com/gres_design.html)
+- [作業啟動設計指南](https://slurm.schedmd.com/job_launch.html)
+- [Select 外掛設計指南](https://slurm.schedmd.com/select_design.html)
+
+---
+
+## 官方文件參考
+
+以下連結指向 Slurm 官方文件，提供更詳細的說明：
+
+### 開發入門
+- [貢獻者指南](https://slurm.schedmd.com/contributor.html)
+- [程式設計師指南](https://slurm.schedmd.com/programmer_guide.html)
+- [應用程式設計介面（API）指南](https://slurm.schedmd.com/api.html)
+- [新增檔案或外掛到 Slurm](https://slurm.schedmd.com/add.html)
+
+### 設計文件
+- [GRES 設計指南](https://slurm.schedmd.com/gres_design.html)
+- [作業啟動設計指南](https://slurm.schedmd.com/job_launch.html)
+- [Select 外掛設計指南](https://slurm.schedmd.com/select_design.html)
+
+### 外掛開發
+- [外掛程式設計師指南](https://slurm.schedmd.com/plugins.html)
+- [CLI Filter 外掛程式設計指南](https://slurm.schedmd.com/cli_filter_plugins.html)
+- [作業提交外掛程式設計指南](https://slurm.schedmd.com/job_submit_plugins.html)
+- [PrEp 外掛程式設計指南](https://slurm.schedmd.com/prep_plugins.html)
+- [Site Factor 外掛程式設計指南](https://slurm.schedmd.com/site_factor.html)
+
+### REST API 開發
+- [REST API 快速入門](https://slurm.schedmd.com/rest_quickstart.html)
+- [REST API 詳細說明](https://slurm.schedmd.com/rest.html)
+- [REST API 方法與模型](https://slurm.schedmd.com/rest_api.html)
+- [OpenAPI 外掛發行說明](https://slurm.schedmd.com/openapi_release_notes.html)
+
+---
+
 ## 外部資源
 
 - **官方文件**：https://slurm.schedmd.com/
@@ -596,3 +749,10 @@ Bug: 12345 (如果有相關的 bug 編號)
 - **API 參考**：https://slurm.schedmd.com/api.html
 - **郵件清單**：slurm-users@lists.schedmd.com
 - **問題追蹤**：https://support.schedmd.com/
+
+---
+
+## 相關文件
+
+- [使用者指南](./user-guide.md) - 一般使用者文件
+- [管理員指南](./admin-guide.md) - 系統管理員文件

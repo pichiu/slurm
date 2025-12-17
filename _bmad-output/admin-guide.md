@@ -639,6 +639,232 @@ RestartSec=10
 
 ---
 
+## 進階主題
+
+以下為進階管理功能，詳細說明請參考官方文件。
+
+### 升級指南
+
+```bash
+# 升級步驟
+1. 備份設定和狀態檔案
+2. 停止 slurmdbd
+3. 停止 slurmctld
+4. 停止所有 slurmd
+5. 升級軟體套件
+6. 更新設定檔（如有需要）
+7. 啟動 slurmdbd
+8. 啟動 slurmctld
+9. 啟動所有 slurmd
+```
+
+📖 詳見：[升級指南](https://slurm.schedmd.com/upgrades.html)
+
+### 容器支援
+
+設定容器化作業執行：
+
+```bash
+# slurm.conf
+# 啟用 OCI 容器執行時期
+SwitchType=switch/none
+MpiDefault=none
+
+# 容器設定範例
+# 使用 Singularity、Docker 或 Podman
+```
+
+📖 詳見：[容器指南](https://slurm.schedmd.com/containers.html)
+
+### 無配置運行（Configless）
+
+讓計算節點動態取得配置：
+
+```bash
+# slurm.conf (控制器端)
+SlurmctldParameters=enable_configless
+
+# 節點端啟動
+slurmd --conf-server=controller:6817
+```
+
+📖 詳見：[無配置 Slurm 運行](https://slurm.schedmd.com/configless_slurm.html)
+
+### Burst Buffer
+
+高速暫存儲存管理：
+
+```bash
+# 作業腳本中使用
+#BB create_persistent name=mybuffer capacity=100GB
+#DW persistentdw name=mybuffer
+```
+
+📖 詳見：[Burst Buffer 指南](https://slurm.schedmd.com/burst_buffer.html)
+
+### 聯邦排程
+
+跨多個叢集的統一作業管理：
+
+```bash
+# 建立聯邦
+sacctmgr add federation myfed clusters=cluster1,cluster2
+
+# 作業會自動路由到最適合的叢集
+```
+
+📖 詳見：[聯邦排程指南](https://slurm.schedmd.com/federation.html)
+
+### Prolog 和 Epilog
+
+作業前後執行的腳本：
+
+```bash
+# slurm.conf
+Prolog=/etc/slurm/prolog.sh
+Epilog=/etc/slurm/epilog.sh
+PrologSlurmctld=/etc/slurm/prolog_slurmctld.sh
+EpilogSlurmctld=/etc/slurm/epilog_slurmctld.sh
+```
+
+📖 詳見：[Prolog 和 Epilog 指南](https://slurm.schedmd.com/prolog_epilog.html)
+
+### 省電功能
+
+自動關閉閒置節點：
+
+```bash
+# slurm.conf
+SuspendProgram=/etc/slurm/suspend.sh
+ResumeProgram=/etc/slurm/resume.sh
+SuspendTime=600
+ResumeTimeout=300
+SuspendExcNodes=node[01-02]
+```
+
+📖 詳見：[省電指南](https://slurm.schedmd.com/power_save.html)
+
+### 授權管理
+
+管理軟體授權作為資源：
+
+```bash
+# slurm.conf
+Licenses=matlab:50,ansys:10
+
+# 作業請求
+#SBATCH --licenses=matlab:2
+```
+
+📖 詳見：[授權管理](https://slurm.schedmd.com/licenses.html)
+
+### pam_slurm_adopt
+
+控制 SSH 連線到計算節點：
+
+```bash
+# /etc/pam.d/sshd
+account required pam_slurm_adopt.so
+```
+
+📖 詳見：[pam_slurm_adopt 指南](https://slurm.schedmd.com/pam_slurm_adopt.html)
+
+### 大型叢集管理
+
+針對大型叢集的最佳化設定：
+
+```bash
+# slurm.conf
+SchedulerParameters=bf_max_job_test=5000
+MaxJobCount=100000
+MaxArraySize=10001
+TreeWidth=65535
+```
+
+📖 詳見：[大型叢集管理指南](https://slurm.schedmd.com/big_sys.html)
+
+### 雲端部署
+
+| 雲端平台 | 說明 |
+|----------|------|
+| Google Cloud Platform | 使用 slurm-gcp 專案 |
+| AWS | AWS Parallel Computing Service |
+| Microsoft Azure | CycleCloud 整合 |
+
+📖 詳見：[雲端排程指南](https://slurm.schedmd.com/power_save.html)
+
+---
+
+## 官方文件參考
+
+以下連結指向 Slurm 官方文件，提供更詳細的說明：
+
+### 基礎管理
+- [快速入門管理員指南](https://slurm.schedmd.com/quickstart_admin.html)
+- [升級指南](https://slurm.schedmd.com/upgrades.html)
+- [故障排除指南](https://slurm.schedmd.com/troubleshoot.html)
+- [使用者權限](https://slurm.schedmd.com/user_permissions.html)
+
+### 配置工具
+- [配置工具（完整版）](https://slurm.schedmd.com/configurator.html)
+- [配置工具（簡化版）](https://slurm.schedmd.com/configurator.easy.html)
+- [無配置 Slurm 運行](https://slurm.schedmd.com/configless_slurm.html)
+
+### 資源管理
+- [記帳](https://slurm.schedmd.com/accounting.html)
+- [進階資源預約指南](https://slurm.schedmd.com/reservations.html)
+- [Cgroups 指南](https://slurm.schedmd.com/cgroups.html)
+- [CPU 管理指南](https://slurm.schedmd.com/cpu_management.html)
+- [動態節點](https://slurm.schedmd.com/dynamic_nodes.html)
+- [授權管理](https://slurm.schedmd.com/licenses.html)
+- [TRES（可追蹤資源）](https://slurm.schedmd.com/tres.html)
+
+### 排程
+- [排程配置指南](https://slurm.schedmd.com/sched_config.html)
+- [消耗性資源指南](https://slurm.schedmd.com/cons_tres.html)
+- [通用資源（GRES）排程](https://slurm.schedmd.com/gres.html)
+- [高吞吐量計算指南](https://slurm.schedmd.com/high_throughput.html)
+- [搶佔](https://slurm.schedmd.com/preempt.html)
+- [服務品質（QoS）](https://slurm.schedmd.com/qos.html)
+- [資源限制](https://slurm.schedmd.com/resource_limits.html)
+- [拓樸](https://slurm.schedmd.com/topology.html)
+
+### 優先級
+- [多因素作業優先級](https://slurm.schedmd.com/priority_multifactor.html)
+- [經典公平共用演算法](https://slurm.schedmd.com/classic_fair_share.html)
+- [深度無關公平共用因素](https://slurm.schedmd.com/priority_multifactor3.html)
+- [Fair Tree 公平共用演算法](https://slurm.schedmd.com/fair_tree.html)
+
+### 安全與驗證
+- [驗證外掛](https://slurm.schedmd.com/authentication.html)
+- [JWT 驗證](https://slurm.schedmd.com/jwt.html)
+- [多類別安全（MCS）指南](https://slurm.schedmd.com/mcs.html)
+- [SELinux 上下文管理](https://slurm.schedmd.com/selinux.html)
+- [pam_slurm_adopt 作業控制](https://slurm.schedmd.com/pam_slurm_adopt.html)
+
+### 進階功能
+- [Burst Buffer 指南](https://slurm.schedmd.com/burst_buffer.html)
+- [容器](https://slurm.schedmd.com/containers.html)
+- [聯邦排程指南](https://slurm.schedmd.com/federation.html)
+- [Prolog 和 Epilog 指南](https://slurm.schedmd.com/prolog_epilog.html)
+- [省電指南](https://slurm.schedmd.com/power_save.html)
+- [大型叢集管理指南](https://slurm.schedmd.com/big_sys.html)
+- [網路配置指南](https://slurm.schedmd.com/network.html)
+
+### REST API
+- [REST API 快速入門](https://slurm.schedmd.com/rest_quickstart.html)
+- [REST API 詳細說明](https://slurm.schedmd.com/rest.html)
+- [REST API 方法與模型](https://slurm.schedmd.com/rest_api.html)
+- [REST API 客戶端指南](https://slurm.schedmd.com/rest_clients.html)
+
+### 整合
+- [Elasticsearch 指南](https://slurm.schedmd.com/elasticsearch.html)
+- [Kubernetes 指南](https://slurm.schedmd.com/kubernetes.html)
+- [NSS Slurm 名稱服務快取](https://slurm.schedmd.com/nss_slurm.html)
+- [WCKey 管理](https://slurm.schedmd.com/wckey.html)
+
+---
+
 ## 相關文件
 
 - [專案概覽](./project-overview.md) - Slurm 系統概述
@@ -646,3 +872,4 @@ RestartSec=10
 - [資料模型](./data-models.md) - 資料結構說明
 - [API 契約](./api-contracts.md) - REST API 文件
 - [使用者指南](./user-guide.md) - 一般使用者文件
+- [開發者指南](./developer-guide.md) - 開發者文件
