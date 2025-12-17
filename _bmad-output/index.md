@@ -1,107 +1,117 @@
-# Slurm Workload Manager - Documentation Index
+# Slurm 工作負載管理器 - 文件索引
 
-> Generated: 2025-12-17 | Scan Level: Exhaustive | Version: 26.05.0-0rc1
+> 產生日期：2025-12-17 | 掃描等級：完整掃描 | 版本：26.05.0-0rc1
 
-This documentation set was generated for AI-assisted development of the Slurm Workload Manager codebase. It provides comprehensive reference materials optimized for LLM context efficiency.
-
----
-
-## Quick Start
-
-| I want to... | Go to |
-|--------------|-------|
-| Understand what Slurm is | [Project Overview](./project-overview.md) |
-| Learn the system architecture | [Architecture](./architecture.md) |
-| Build from source | [Development Guide](./development-guide.md) |
-| Navigate the source code | [Source Tree Analysis](./source-tree-analysis.md) |
-| Work with the REST API | [API Contracts](./api-contracts.md) |
-| Understand data structures | [Data Models](./data-models.md) |
+本文件集為 Slurm 工作負載管理器程式碼庫的 AI 輔助開發而產生，提供針對 LLM 上下文效率最佳化的完整參考資料。
 
 ---
 
-## Generated Documentation
+## 快速導覽
 
-### Core Documents
-
-| Document | Description | Status |
-|----------|-------------|--------|
-| [Project Overview](./project-overview.md) | Quick reference, capabilities, getting started | Complete |
-| [Architecture](./architecture.md) | System design, daemons, plugins, communication | Complete |
-| [Source Tree Analysis](./source-tree-analysis.md) | Directory structure, key files, statistics | Complete |
-| [Development Guide](./development-guide.md) | Build instructions, coding style, testing | Complete |
-| [API Contracts](./api-contracts.md) | REST API endpoints for slurmctld and slurmdbd | Complete |
-| [Data Models](./data-models.md) | Core data structures and database schema | Complete |
-
-### State Files
-
-| File | Purpose |
-|------|---------|
-| [project-scan-report.json](./project-scan-report.json) | Workflow state and findings |
+| 我想要... | 前往 |
+|-----------|------|
+| 了解 Slurm 是什麼 | [專案概覽](./project-overview.md) |
+| 學習系統架構 | [架構文件](./architecture.md) |
+| 從原始碼建置 | [開發指南](./development-guide.md) |
+| 瀏覽原始碼結構 | [原始碼樹狀分析](./source-tree-analysis.md) |
+| 使用 REST API | [API 契約](./api-contracts.md) |
+| 了解資料結構 | [資料模型](./data-models.md) |
 
 ---
 
-## Project Existing Documentation
+## 依角色分類的指南
 
-### Official Documentation (in repository)
-
-| Location | Content |
-|----------|---------|
-| `doc/html/` | 91 HTML documentation pages |
-| `doc/man/` | 44 man pages |
-| `README.md` | Project introduction |
-| `INSTALL` | Installation instructions |
-| `CONTRIBUTING.md` | Contribution guidelines |
-| `CHANGELOG.md` | Version history |
-| `SECURITY.md` | Security policy |
-
-### External Resources
-
-- **Official Site**: https://slurm.schedmd.com/
-- **Admin Guide**: https://slurm.schedmd.com/quickstart_admin.html
-- **User Guide**: https://slurm.schedmd.com/quickstart.html
-- **API Reference**: https://slurm.schedmd.com/api.html
-- **Issue Tracker**: https://support.schedmd.com/
+| 文件 | 說明 | 適用對象 |
+|------|------|----------|
+| [使用者指南](./user-guide.md) | 作業提交、監控、資源查詢 | 一般使用者 |
+| [管理員指南](./admin-guide.md) | 叢集配置、節點管理、帳戶管理 | 系統管理員 |
+| [開發者指南](./developer-guide.md) | 建置、外掛開發、貢獻程式碼 | 開發人員 |
 
 ---
 
-## Project Summary
+## 產生的文件
 
-### Classification
+### 核心文件
 
-| Property | Value |
-|----------|-------|
-| Repository Type | Monolith |
-| Primary Type | Backend (infrastructure + CLI) |
-| Architecture | Distributed master-worker |
-| Primary Language | C (C99) |
-| Build System | GNU Autotools |
+| 文件 | 說明 | 狀態 |
+|------|------|------|
+| [專案概覽](./project-overview.md) | 快速參考、功能說明、入門指引 | 完成 |
+| [架構文件](./architecture.md) | 系統設計、守護程式、外掛、通訊協定 | 完成 |
+| [原始碼樹狀分析](./source-tree-analysis.md) | 目錄結構、關鍵檔案、統計資料 | 完成 |
+| [開發指南](./development-guide.md) | 建置說明、程式碼風格、測試 | 完成 |
+| [API 契約](./api-contracts.md) | slurmctld 與 slurmdbd 的 REST API 端點 | 完成 |
+| [資料模型](./data-models.md) | 核心資料結構與資料庫綱要 | 完成 |
 
-### Key Statistics
+### 狀態檔案
 
-| Metric | Count |
-|--------|-------|
-| C Source Files | 679 |
-| Header Files | 419 |
-| Plugin Categories | 38 |
-| CLI Tools | 19 |
-| Daemons | 6 |
-| Estimated LOC | 500,000+ |
+| 檔案 | 用途 |
+|------|------|
+| [project-scan-report.json](./project-scan-report.json) | 工作流程狀態與掃描結果 |
 
-### Technology Stack
+---
 
-| Category | Technology |
-|----------|------------|
-| Language | C (C99) |
-| Database | MySQL / MariaDB 5.0+ |
-| Authentication | MUNGE (default), JWT |
-| Build | autoconf, automake, libtool |
-| Testing | Check, Expect, Pytest |
-| Serialization | Custom binary, JSON, YAML |
+## 專案現有文件
 
-### Network Ports
+### 官方文件（儲存庫內）
 
-| Service | Port |
-|---------|------|
+| 位置 | 內容 |
+|------|------|
+| `doc/html/` | 91 個 HTML 文件頁面 |
+| `doc/man/` | 44 個 man 手冊頁面 |
+| `README.md` | 專案介紹 |
+| `INSTALL` | 安裝說明 |
+| `CONTRIBUTING.md` | 貢獻指南 |
+| `CHANGELOG.md` | 版本歷史 |
+| `SECURITY.md` | 安全政策 |
+
+### 外部資源
+
+- **官方網站**：https://slurm.schedmd.com/
+- **管理員指南**：https://slurm.schedmd.com/quickstart_admin.html
+- **使用者指南**：https://slurm.schedmd.com/quickstart.html
+- **API 參考**：https://slurm.schedmd.com/api.html
+- **問題追蹤**：https://support.schedmd.com/
+
+---
+
+## 專案摘要
+
+### 分類
+
+| 屬性 | 值 |
+|------|-----|
+| 儲存庫類型 | 單體式 (Monolith) |
+| 主要類型 | 後端服務（基礎設施 + CLI） |
+| 架構模式 | 分散式主從架構 |
+| 主要語言 | C (C99) |
+| 建置系統 | GNU Autotools |
+
+### 關鍵統計
+
+| 指標 | 數量 |
+|------|------|
+| C 原始碼檔案 | 679 |
+| 標頭檔 | 419 |
+| 外掛類別 | 38 |
+| CLI 工具 | 19 |
+| 守護程式 | 6 |
+| 預估程式碼行數 | 500,000+ |
+
+### 技術堆疊
+
+| 類別 | 技術 |
+|------|------|
+| 語言 | C (C99) |
+| 資料庫 | MySQL / MariaDB 5.0+ |
+| 驗證 | MUNGE（預設）、JWT |
+| 建置 | autoconf、automake、libtool |
+| 測試 | Check、Expect、Pytest |
+| 序列化 | 自訂二進位、JSON、YAML |
+
+### 網路連接埠
+
+| 服務 | 連接埠 |
+|------|--------|
 | slurmctld | 6817 |
 | slurmd | 6818 |
 | slurmdbd | 6819 |
@@ -109,73 +119,73 @@ This documentation set was generated for AI-assisted development of the Slurm Wo
 
 ---
 
-## Architecture Overview
+## 架構概覽
 
 ```
-Users --> CLI Tools/REST API --> slurmctld (Controller)
+使用者 --> CLI 工具/REST API --> slurmctld（控制器）
                                        |
-                                 slurmd (Nodes)
+                                 slurmd（節點）
                                        |
-                               slurmstepd (Tasks)
+                               slurmstepd（任務）
                                        |
                                  slurmdbd --> MySQL
 ```
 
-### Core Components
+### 核心元件
 
-| Component | Purpose | Entry Point |
-|-----------|---------|-------------|
-| slurmctld | Central controller - scheduling, allocation | `src/slurmctld/controller.c` |
-| slurmd | Node daemon - job execution | `src/slurmd/slurmd/slurmd.c` |
-| slurmstepd | Step manager - task management | `src/slurmd/slurmstepd/slurmstepd.c` |
-| slurmdbd | Database daemon - accounting | `src/slurmdbd/slurmdbd.c` |
-| slurmrestd | REST API daemon - HTTP interface | `src/slurmrestd/slurmrestd.c` |
+| 元件 | 用途 | 進入點 |
+|------|------|--------|
+| slurmctld | 中央控制器 - 排程、資源分配 | `src/slurmctld/controller.c` |
+| slurmd | 節點守護程式 - 作業執行 | `src/slurmd/slurmd/slurmd.c` |
+| slurmstepd | 步驟管理器 - 任務管理 | `src/slurmd/slurmstepd/slurmstepd.c` |
+| slurmdbd | 資料庫守護程式 - 記帳 | `src/slurmdbd/slurmdbd.c` |
+| slurmrestd | REST API 守護程式 - HTTP 介面 | `src/slurmrestd/slurmrestd.c` |
 
-### CLI Tools
+### CLI 工具
 
-| Category | Tools |
-|----------|-------|
-| Job Submission | sbatch, srun, salloc |
-| Job Control | scancel, sattach, sbcast |
-| Monitoring | squeue, sinfo, sstat, sacct, sdiag |
-| Administration | scontrol, sacctmgr, sreport |
-| Utilities | sprio, sshare, strigger, scrontab |
-
----
-
-## Source Navigation
-
-### Critical Directories
-
-| Directory | Purpose |
-|-----------|---------|
-| `src/slurmctld/` | Controller daemon |
-| `src/slurmd/` | Node daemon and step daemon |
-| `src/slurmdbd/` | Database daemon |
-| `src/slurmrestd/` | REST API daemon |
-| `src/common/` | Shared libraries |
-| `src/interfaces/` | Plugin interfaces |
-| `src/plugins/` | 38 plugin categories |
-| `src/api/` | Client API |
-| `slurm/` | Public headers |
-
-### Key Files for Understanding
-
-| File | Purpose |
-|------|---------|
-| `src/common/job_record.h` | Job data structure |
-| `src/common/node_conf.h` | Node data structure |
-| `src/common/part_record.h` | Partition data structure |
-| `slurm/slurm.h` | Main public API |
-| `slurm/slurmdb.h` | Accounting API |
-| `src/common/slurm_protocol_defs.h` | RPC definitions |
-| `src/common/pack.c` | Serialization |
+| 類別 | 工具 |
+|------|------|
+| 作業提交 | sbatch、srun、salloc |
+| 作業控制 | scancel、sattach、sbcast |
+| 監控 | squeue、sinfo、sstat、sacct、sdiag |
+| 管理 | scontrol、sacctmgr、sreport |
+| 公用程式 | sprio、sshare、strigger、scrontab |
 
 ---
 
-## Development Quick Reference
+## 原始碼導覽
 
-### Build
+### 關鍵目錄
+
+| 目錄 | 用途 |
+|------|------|
+| `src/slurmctld/` | 控制器守護程式 |
+| `src/slurmd/` | 節點守護程式與步驟守護程式 |
+| `src/slurmdbd/` | 資料庫守護程式 |
+| `src/slurmrestd/` | REST API 守護程式 |
+| `src/common/` | 共用函式庫 |
+| `src/interfaces/` | 外掛介面 |
+| `src/plugins/` | 38 種外掛類別 |
+| `src/api/` | 客戶端 API |
+| `slurm/` | 公開標頭檔 |
+
+### 理解程式碼的關鍵檔案
+
+| 檔案 | 用途 |
+|------|------|
+| `src/common/job_record.h` | 作業資料結構 |
+| `src/common/node_conf.h` | 節點資料結構 |
+| `src/common/part_record.h` | 分割區資料結構 |
+| `slurm/slurm.h` | 主要公開 API |
+| `slurm/slurmdb.h` | 記帳 API |
+| `src/common/slurm_protocol_defs.h` | RPC 定義 |
+| `src/common/pack.c` | 序列化 |
+
+---
+
+## 開發快速參考
+
+### 建置
 
 ```bash
 ./configure --prefix=/usr/local
@@ -183,7 +193,7 @@ make -j$(nproc)
 sudo make install
 ```
 
-### Debug Build
+### 除錯建置
 
 ```bash
 ./configure --prefix=/usr/local \
@@ -193,46 +203,46 @@ sudo make install
 make -j$(nproc)
 ```
 
-### Testing
+### 測試
 
 ```bash
-# Unit tests
+# 單元測試
 cd testsuite/slurm_unit && make check
 
-# Functional tests (requires running cluster)
+# 功能測試（需要運行中的叢集）
 cd testsuite/expect && ./regression.py
 
-# Python tests
+# Python 測試
 cd testsuite/python && pytest
 ```
 
 ---
 
-## Document Revision History
+## 文件修訂歷史
 
-| Date | Action | Notes |
-|------|--------|-------|
-| 2025-12-17 | Initial generation | Exhaustive scan completed |
+| 日期 | 動作 | 備註 |
+|------|------|------|
+| 2025-12-17 | 初始產生 | 完整掃描完成 |
 
 ---
 
-## AI Development Notes
+## AI 開發說明
 
-This documentation is optimized for AI-assisted development:
+本文件針對 AI 輔助開發最佳化：
 
-1. **Project Overview** - Start here for context
-2. **Architecture** - Understand system design before modifications
-3. **Source Tree Analysis** - Find relevant files quickly
-4. **Data Models** - Understand core structures before coding
-5. **API Contracts** - Reference for REST API work
-6. **Development Guide** - Follow coding standards
+1. **專案概覽** - 從這裡開始了解背景
+2. **架構文件** - 修改前先了解系統設計
+3. **原始碼樹狀分析** - 快速找到相關檔案
+4. **資料模型** - 編寫程式碼前了解核心結構
+5. **API 契約** - REST API 工作的參考
+6. **開發指南** - 遵循程式碼規範
 
-### Common Tasks
+### 常見任務
 
-| Task | Recommended Reading |
-|------|---------------------|
-| Add new CLI option | Development Guide > Common Development Tasks |
-| Add new RPC | Architecture > Communication Protocol, Development Guide |
-| Create new plugin | Architecture > Plugin Architecture, Development Guide |
-| Modify job handling | Data Models > job_record_t, Source Tree > slurmctld |
-| Work with REST API | API Contracts, Source Tree > slurmrestd |
+| 任務 | 建議閱讀 |
+|------|----------|
+| 新增 CLI 選項 | 開發指南 > 常見開發任務 |
+| 新增 RPC | 架構文件 > 通訊協定、開發指南 |
+| 建立新外掛 | 架構文件 > 外掛架構、開發指南 |
+| 修改作業處理 | 資料模型 > job_record_t、原始碼樹狀 > slurmctld |
+| 使用 REST API | API 契約、原始碼樹狀 > slurmrestd |

@@ -1,50 +1,50 @@
-# Slurm Architecture Documentation
+# Slurm 架構文件
 
-> Generated: 2025-12-17 | Scan Level: Exhaustive
+> 產生日期：2025-12-17 | 掃描等級：完整掃描
 
-## Executive Summary
+## 執行摘要
 
-Slurm (Simple Linux Utility for Resource Management) is a highly scalable, fault-tolerant cluster management and job scheduling system for Linux clusters. It is designed for HPC (High-Performance Computing) environments and can manage clusters ranging from small workgroups to massive supercomputers with millions of cores.
+Slurm（Simple Linux Utility for Resource Management）是一套高度可擴展、容錯的叢集管理與作業排程系統，專為 Linux 叢集設計。它針對 HPC（高效能運算）環境設計，可管理從小型工作群組到擁有數百萬核心的大型超級電腦。
 
-**Key Characteristics:**
-- Open-source (GPLv2+)
-- Written in C (C99)
-- Plugin-based architecture
-- Distributed master-worker design
-- Protocol version: v45 (26.05)
+**主要特點：**
+- 開放原始碼（GPLv2+）
+- 以 C 語言（C99）編寫
+- 外掛式架構
+- 分散式主從設計
+- 協定版本：v45（26.05）
 
 ---
 
-## System Architecture
+## 系統架構
 
-### High-Level Overview
+### 高階概覽
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        User Interface Layer                          │
+│                         使用者介面層                                  │
 │  ┌─────┐ ┌─────┐ ┌──────┐ ┌──────┐ ┌───────┐ ┌──────┐ ┌─────────┐  │
 │  │sbatch│ │srun │ │salloc│ │squeue│ │scontrol│ │sacct │ │slurmrestd│ │
 │  └──┬──┘ └──┬──┘ └──┬───┘ └──┬───┘ └───┬───┘ └──┬───┘ └────┬────┘  │
 └─────┼───────┼───────┼────────┼─────────┼────────┼──────────┼────────┘
       │       │       │        │         │        │          │
       └───────┴───────┴────────┴────┬────┴────────┴──────────┘
-                                    │ RPC Protocol (port 6817)
+                                    │ RPC 協定（連接埠 6817）
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                      Control Plane (slurmctld)                       │
+│                      控制平面（slurmctld）                            │
 │  ┌───────────┐ ┌────────────┐ ┌──────────┐ ┌────────────────────┐   │
-│  │ Job Mgr   │ │ Node Mgr   │ │ Scheduler │ │ Partition Mgr      │   │
+│  │ 作業管理器 │ │  節點管理器 │ │  排程器   │ │    分割區管理器     │   │
 │  └───────────┘ └────────────┘ └──────────┘ └────────────────────┘   │
 │  ┌───────────┐ ┌────────────┐ ┌──────────┐ ┌────────────────────┐   │
-│  │ State Save│ │ Backup Mgr │ │ RPC Mgr  │ │ Plugin Manager     │   │
+│  │ 狀態儲存  │ │  備份管理器 │ │ RPC 管理器│ │     外掛管理器      │   │
 │  └───────────┘ └────────────┘ └──────────┘ └────────────────────┘   │
 └─────────────────────────────────┬───────────────────────────────────┘
-                                  │ RPC Protocol (port 6818)
+                                  │ RPC 協定（連接埠 6818）
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                      Compute Plane (slurmd)                          │
+│                      計算平面（slurmd）                               │
 │  ┌─────────────────────────────────────────────────────────────┐    │
-│  │ Node 1        │ Node 2        │ Node 3        │ Node N      │    │
+│  │ 節點 1        │ 節點 2        │ 節點 3        │ 節點 N      │    │
 │  │ ┌───────────┐ │ ┌───────────┐ │ ┌───────────┐ │ ┌─────────┐ │    │
 │  │ │  slurmd   │ │ │  slurmd   │ │ │  slurmd   │ │ │ slurmd  │ │    │
 │  │ │    │      │ │ │    │      │ │ │    │      │ │ │    │    │ │    │
@@ -53,14 +53,14 @@ Slurm (Simple Linux Utility for Resource Management) is a highly scalable, fault
 │  └─────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────┘
                                   │
-                                  │ SQL Protocol (port 6819)
+                                  │ SQL 協定（連接埠 6819）
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    Accounting Plane (slurmdbd)                       │
+│                     記帳平面（slurmdbd）                              │
 │  ┌────────────────────────────────────────────────────────────────┐ │
-│  │                  slurmdbd (Database Daemon)                     │ │
+│  │                  slurmdbd（資料庫守護程式）                       │ │
 │  │  ┌────────────┐ ┌───────────────┐ ┌──────────────────────────┐ │ │
-│  │  │ RPC Handler│ │ Job Accounting│ │ Association/QoS Manager  │ │ │
+│  │  │ RPC 處理器 │ │   作業記帳    │ │   關聯/QoS 管理器        │ │ │
 │  │  └────────────┘ └───────────────┘ └──────────────────────────┘ │ │
 │  └────────────────────────────────────────────────────────────────┘ │
 │                              │                                       │
@@ -73,193 +73,193 @@ Slurm (Simple Linux Utility for Resource Management) is a highly scalable, fault
 
 ---
 
-## Core Daemons
+## 核心守護程式
 
-### 1. slurmctld (Central Controller)
+### 1. slurmctld（中央控制器）
 
-**Purpose**: Brain of the cluster - manages jobs, nodes, partitions, and scheduling
+**用途**：叢集的大腦 - 管理作業、節點、分割區和排程
 
-**Entry Point**: `src/slurmctld/controller.c`
+**進入點**：`src/slurmctld/controller.c`
 
-**Key Responsibilities:**
-- Job queue management
-- Resource allocation decisions
-- Node state tracking
-- Partition management
-- Scheduling algorithm execution
-- State persistence and recovery
-- High availability (backup controllers)
+**主要職責：**
+- 作業佇列管理
+- 資源分配決策
+- 節點狀態追蹤
+- 分割區管理
+- 排程演算法執行
+- 狀態持久化與恢復
+- 高可用性（備份控制器）
 
-**Key Components:**
-| Component | File | Purpose |
-|-----------|------|---------|
-| Job Manager | `job_mgr.c` | Job lifecycle management |
-| Job Scheduler | `job_scheduler.c` | Scheduling decisions |
-| Node Manager | `node_mgr.c` | Node state tracking |
-| Partition Manager | `partition_mgr.c` | Partition configuration |
-| State Save | `state_save.c` | Checkpoint/restart |
-| Backup | `backup.c` | HA failover |
+**主要元件：**
+| 元件 | 檔案 | 用途 |
+|------|------|------|
+| 作業管理器 | `job_mgr.c` | 作業生命週期管理 |
+| 作業排程器 | `job_scheduler.c` | 排程決策 |
+| 節點管理器 | `node_mgr.c` | 節點狀態追蹤 |
+| 分割區管理器 | `partition_mgr.c` | 分割區設定 |
+| 狀態儲存 | `state_save.c` | 檢查點/重啟 |
+| 備份 | `backup.c` | 高可用性故障轉移 |
 
-**Default Port**: 6817
+**預設連接埠**：6817
 
-### 2. slurmd (Node Daemon)
+### 2. slurmd（節點守護程式）
 
-**Purpose**: Agent on each compute node - executes jobs locally
+**用途**：每個計算節點上的代理程式 - 在本機執行作業
 
-**Entry Point**: `src/slurmd/slurmd/slurmd.c`
+**進入點**：`src/slurmd/slurmd/slurmd.c`
 
-**Key Responsibilities:**
-- Accept job allocations from slurmctld
-- Launch job steps via slurmstepd
-- Monitor local resource usage
-- Report node health status
-- Enforce resource limits
+**主要職責：**
+- 接受來自 slurmctld 的作業分配
+- 透過 slurmstepd 啟動作業步驟
+- 監控本機資源使用
+- 回報節點健康狀態
+- 強制執行資源限制
 
-**Key Components:**
-| Component | File | Purpose |
-|-----------|------|---------|
-| Request Handler | `req.c` | RPC processing |
-| Machine Stats | `get_mach_stat.c` | Hardware detection |
-| Job Memory | `job_mem_limit.c` | Memory enforcement |
-| Credential | `cred_context.c` | Job authentication |
+**主要元件：**
+| 元件 | 檔案 | 用途 |
+|------|------|------|
+| 請求處理器 | `req.c` | RPC 處理 |
+| 機器統計 | `get_mach_stat.c` | 硬體偵測 |
+| 作業記憶體 | `job_mem_limit.c` | 記憶體強制執行 |
+| 憑證 | `cred_context.c` | 作業驗證 |
 
-**Default Port**: 6818
+**預設連接埠**：6818
 
-### 3. slurmstepd (Step Manager)
+### 3. slurmstepd（步驟管理器）
 
-**Purpose**: Manages individual job step execution
+**用途**：管理個別作業步驟的執行
 
-**Entry Point**: `src/slurmd/slurmstepd/slurmstepd.c`
+**進入點**：`src/slurmd/slurmstepd/slurmstepd.c`
 
-**Key Responsibilities:**
-- Task launching and management
-- I/O redirection (stdin/stdout/stderr)
-- Signal handling
-- Process tracking
-- Resource accounting
-- Container/namespace support
+**主要職責：**
+- 任務啟動與管理
+- I/O 重導向（stdin/stdout/stderr）
+- 訊號處理
+- 程序追蹤
+- 資源記帳
+- 容器/命名空間支援
 
-**Key Components:**
-| Component | File | Purpose |
-|-----------|------|---------|
-| Task Manager | `task.c` | Process launch |
-| I/O Handler | `io.c` | Stream management |
-| Container | `container.c` | Namespace setup |
-| X11 Forward | `x11_forwarding.c` | Display forwarding |
+**主要元件：**
+| 元件 | 檔案 | 用途 |
+|------|------|------|
+| 任務管理器 | `task.c` | 程序啟動 |
+| I/O 處理器 | `io.c` | 串流管理 |
+| 容器 | `container.c` | 命名空間設定 |
+| X11 轉發 | `x11_forwarding.c` | 顯示轉發 |
 
-### 4. slurmdbd (Database Daemon)
+### 4. slurmdbd（資料庫守護程式）
 
-**Purpose**: Central accounting database service
+**用途**：中央記帳資料庫服務
 
-**Entry Point**: `src/slurmdbd/slurmdbd.c`
+**進入點**：`src/slurmdbd/slurmdbd.c`
 
-**Key Responsibilities:**
-- Job completion logging
-- Usage accounting
-- Association/QoS management
-- Fair-share calculation data
-- Multi-cluster federation
+**主要職責：**
+- 作業完成記錄
+- 使用量記帳
+- 關聯/QoS 管理
+- 公平共用計算資料
+- 多叢集聯邦
 
-**Default Port**: 6819
+**預設連接埠**：6819
 
-### 5. slurmrestd (REST API Daemon)
+### 5. slurmrestd（REST API 守護程式）
 
-**Purpose**: HTTP/REST interface to Slurm
+**用途**：Slurm 的 HTTP/REST 介面
 
-**Entry Point**: `src/slurmrestd/slurmrestd.c`
+**進入點**：`src/slurmrestd/slurmrestd.c`
 
-**Key Responsibilities:**
-- OpenAPI specification compliance
-- JWT authentication
-- JSON/YAML serialization
-- Proxy to slurmctld/slurmdbd
+**主要職責：**
+- OpenAPI 規範相容
+- JWT 驗證
+- JSON/YAML 序列化
+- 代理至 slurmctld/slurmdbd
 
-**Default Port**: 6820
+**預設連接埠**：6820
 
 ---
 
-## Plugin Architecture
+## 外掛架構
 
-Slurm uses a highly modular plugin system allowing customization of nearly every aspect.
+Slurm 使用高度模組化的外掛系統，允許自訂幾乎每個方面。
 
-### Plugin Categories (38 total)
+### 外掛類別（共 38 種）
 
 ```
 plugins/
-├── Authentication & Security
-│   ├── auth/           # Authentication (munge, jwt, none, slurm)
-│   ├── cred/           # Job credentials
-│   ├── tls/            # TLS encryption
-│   ├── certgen/        # Certificate generation
-│   └── certmgr/        # Certificate management
+├── 驗證與安全
+│   ├── auth/           # 驗證（munge、jwt、none、slurm）
+│   ├── cred/           # 作業憑證
+│   ├── tls/            # TLS 加密
+│   ├── certgen/        # 憑證產生
+│   └── certmgr/        # 憑證管理
 │
-├── Scheduling & Selection
-│   ├── sched/          # Schedulers (builtin, backfill)
-│   ├── select/         # Resource selection (linear, cons_tres)
-│   ├── priority/       # Priority calculation
-│   └── preempt/        # Job preemption
+├── 排程與選擇
+│   ├── sched/          # 排程器（builtin、backfill）
+│   ├── select/         # 資源選擇（linear、cons_tres）
+│   ├── priority/       # 優先級計算
+│   └── preempt/        # 作業搶佔
 │
-├── Resource Management
-│   ├── gres/           # Generic resources
-│   ├── gpu/            # GPU management (nvidia, amd, intel)
-│   ├── burst_buffer/   # Burst buffer
-│   ├── node_features/  # Node features
-│   └── topology/       # Network topology
+├── 資源管理
+│   ├── gres/           # 通用資源
+│   ├── gpu/            # GPU 管理（nvidia、amd、intel）
+│   ├── burst_buffer/   # 突發緩衝區
+│   ├── node_features/  # 節點功能
+│   └── topology/       # 網路拓樸
 │
-├── Accounting & Storage
-│   ├── accounting_storage/  # Database backends
-│   ├── jobacct_gather/      # Job accounting
-│   ├── jobcomp/             # Job completion
-│   └── acct_gather_*/       # Energy, filesystem, network
+├── 記帳與儲存
+│   ├── accounting_storage/  # 資料庫後端
+│   ├── jobacct_gather/      # 作業記帳
+│   ├── jobcomp/             # 作業完成
+│   └── acct_gather_*/       # 能源、檔案系統、網路
 │
-├── Job Execution
-│   ├── task/           # Task affinity, cgroups
-│   ├── proctrack/      # Process tracking
-│   ├── mpi/            # MPI support (pmix, pmi2)
+├── 作業執行
+│   ├── task/           # 任務親和性、cgroups
+│   ├── proctrack/      # 程序追蹤
+│   ├── mpi/            # MPI 支援（pmix、pmi2）
 │   ├── cgroup/         # Cgroup v1/v2
-│   └── namespace/      # Linux namespaces
+│   └── namespace/      # Linux 命名空間
 │
-└── Data & Utilities
-    ├── serializer/     # Data serialization
-    ├── data_parser/    # API data parsing
-    ├── hash/           # Hash algorithms
-    ├── job_submit/     # Submission hooks
-    └── cli_filter/     # CLI filtering
+└── 資料與工具
+    ├── serializer/     # 資料序列化
+    ├── data_parser/    # API 資料解析
+    ├── hash/           # 雜湊演算法
+    ├── job_submit/     # 提交鉤子
+    └── cli_filter/     # CLI 過濾
 ```
 
-### Plugin Interface
+### 外掛介面
 
-All plugins implement standard symbols:
+所有外掛都實作標準符號：
 ```c
-const char plugin_name[];          // Human-readable name
-const char plugin_type[];          // Plugin type identifier
-const uint32_t plugin_version;     // Slurm version compatibility
+const char plugin_name[];          // 人類可讀名稱
+const char plugin_type[];          // 外掛類型識別碼
+const uint32_t plugin_version;     // Slurm 版本相容性
 ```
 
 ---
 
-## Communication Protocol
+## 通訊協定
 
-### RPC Protocol
+### RPC 協定
 
-Slurm uses a custom binary RPC protocol:
+Slurm 使用自訂二進位 RPC 協定：
 
-- **Serialization**: Custom pack/unpack (`src/common/pack.c`)
-- **Protocol Version**: Negotiated per connection
-- **Encryption**: Optional TLS
-- **Authentication**: MUNGE or JWT tokens
+- **序列化**：自訂 pack/unpack（`src/common/pack.c`）
+- **協定版本**：每個連線協商
+- **加密**：選用 TLS
+- **驗證**：MUNGE 或 JWT 權杖
 
-### Message Flow
+### 訊息流程
 
 ```
-Client → pack(request) → encrypt → send → slurmctld
-slurmctld → decrypt → unpack → process → pack(response) → encrypt → send → Client
+客戶端 → pack(請求) → 加密 → 發送 → slurmctld
+slurmctld → 解密 → unpack → 處理 → pack(回應) → 加密 → 發送 → 客戶端
 ```
 
-### Default Ports
+### 預設連接埠
 
-| Service | Port | Protocol |
-|---------|------|----------|
+| 服務 | 連接埠 | 協定 |
+|------|--------|------|
 | slurmctld | 6817 | Slurm RPC |
 | slurmd | 6818 | Slurm RPC |
 | slurmdbd | 6819 | Slurm RPC |
@@ -267,122 +267,122 @@ slurmctld → decrypt → unpack → process → pack(response) → encrypt → 
 
 ---
 
-## Data Flow
+## 資料流程
 
-### Job Submission Flow
-
-```
-1. User submits job (sbatch/srun/salloc)
-2. CLI validates and sends to slurmctld
-3. slurmctld:
-   a. Authenticates request
-   b. Validates against associations/QoS
-   c. Queues job
-   d. Scheduler evaluates priority
-4. When resources available:
-   a. slurmctld allocates nodes
-   b. Sends allocation to slurmd(s)
-5. slurmd spawns slurmstepd
-6. slurmstepd launches user tasks
-7. On completion:
-   a. slurmd reports to slurmctld
-   b. slurmctld records in slurmdbd
-```
-
-### Accounting Flow
+### 作業提交流程
 
 ```
-Job Event → slurmctld → slurmdbd → MySQL
+1. 使用者提交作業（sbatch/srun/salloc）
+2. CLI 驗證並發送至 slurmctld
+3. slurmctld：
+   a. 驗證請求
+   b. 依據關聯/QoS 驗證
+   c. 將作業加入佇列
+   d. 排程器評估優先級
+4. 當資源可用時：
+   a. slurmctld 分配節點
+   b. 發送分配至 slurmd
+5. slurmd 產生 slurmstepd
+6. slurmstepd 啟動使用者任務
+7. 完成時：
+   a. slurmd 回報至 slurmctld
+   b. slurmctld 記錄至 slurmdbd
+```
+
+### 記帳流程
+
+```
+作業事件 → slurmctld → slurmdbd → MySQL
                 ↓
-         State files (backup)
+         狀態檔案（備份）
 ```
 
 ---
 
-## High Availability
+## 高可用性
 
-### Controller Failover
+### 控制器故障轉移
 
-- Primary and backup slurmctld daemons
-- State saved periodically to shared storage
-- Automatic failover on primary failure
-- Configurable via `BackupController` in slurm.conf
+- 主要和備份 slurmctld 守護程式
+- 狀態定期儲存至共用儲存
+- 主要故障時自動故障轉移
+- 透過 slurm.conf 中的 `BackupController` 設定
 
-### Database Redundancy
+### 資料庫冗餘
 
-- slurmdbd can use MySQL replication
-- Optional in-memory caching
-- Graceful handling of database outages
-
----
-
-## Scalability
-
-Slurm is designed for extreme scale:
-
-| Metric | Capability |
-|--------|------------|
-| Nodes | 100,000+ |
-| Cores | Millions |
-| Jobs/day | Millions |
-| Concurrent jobs | 100,000+ |
-
-### Optimization Techniques
-
-- Hierarchical communication
-- Aggregated node updates
-- Efficient bit-string operations
-- Message coalescing
-- Tree-based fan-out
+- slurmdbd 可使用 MySQL 複寫
+- 選用記憶體內快取
+- 優雅處理資料庫中斷
 
 ---
 
-## Security Model
+## 可擴展性
 
-### Authentication
+Slurm 專為極端規模設計：
 
-1. **MUNGE** (default) - Shared-key authentication
-2. **JWT** - Token-based authentication
-3. **Slurm internal** - Native authentication
+| 指標 | 能力 |
+|------|------|
+| 節點 | 100,000+ |
+| 核心 | 數百萬 |
+| 每日作業數 | 數百萬 |
+| 並行作業數 | 100,000+ |
 
-### Authorization
+### 最佳化技術
 
-- User/account/QoS hierarchy
-- Partition access controls
-- Resource limits
-- Job credential signing
-
-### Network Security
-
-- Optional TLS encryption
-- Configurable allowed networks
-- Firewall-friendly port configuration
+- 階層式通訊
+- 聚合節點更新
+- 高效位元字串運算
+- 訊息合併
+- 樹狀扇出
 
 ---
 
-## Configuration Files
+## 安全模型
 
-| File | Purpose |
-|------|---------|
-| `slurm.conf` | Main configuration |
-| `slurmdbd.conf` | Database daemon config |
-| `cgroup.conf` | Cgroup settings |
-| `gres.conf` | Generic resources |
-| `topology.conf` | Network topology |
+### 驗證
+
+1. **MUNGE**（預設）- 共用金鑰驗證
+2. **JWT** - 權杖式驗證
+3. **Slurm 內建** - 原生驗證
+
+### 授權
+
+- 使用者/帳戶/QoS 階層
+- 分割區存取控制
+- 資源限制
+- 作業憑證簽章
+
+### 網路安全
+
+- 選用 TLS 加密
+- 可設定允許的網路
+- 防火牆友善的連接埠設定
 
 ---
 
-## Technology Stack Summary
+## 設定檔
 
-| Category | Technology |
-|----------|------------|
-| Language | C (C99) |
-| Build | GNU Autotools |
-| Database | MySQL/MariaDB |
-| Auth | MUNGE, JWT |
-| Serialization | Custom binary, JSON, YAML |
-| Process Control | cgroups v1/v2, procfs |
-| Networking | TCP/IP, Unix sockets |
-| GPU Support | NVIDIA NVML, AMD ROCm, Intel OneAPI |
-| MPI | PMIx, PMI2 |
-| Containers | Singularity, Docker (via plugins) |
+| 檔案 | 用途 |
+|------|------|
+| `slurm.conf` | 主要設定 |
+| `slurmdbd.conf` | 資料庫守護程式設定 |
+| `cgroup.conf` | Cgroup 設定 |
+| `gres.conf` | 通用資源 |
+| `topology.conf` | 網路拓樸 |
+
+---
+
+## 技術堆疊摘要
+
+| 類別 | 技術 |
+|------|------|
+| 語言 | C (C99) |
+| 建置 | GNU Autotools |
+| 資料庫 | MySQL/MariaDB |
+| 驗證 | MUNGE、JWT |
+| 序列化 | 自訂二進位、JSON、YAML |
+| 程序控制 | cgroups v1/v2、procfs |
+| 網路 | TCP/IP、Unix sockets |
+| GPU 支援 | NVIDIA NVML、AMD ROCm、Intel OneAPI |
+| MPI | PMIx、PMI2 |
+| 容器 | Singularity、Docker（透過外掛）|

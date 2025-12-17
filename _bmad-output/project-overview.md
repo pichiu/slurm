@@ -1,47 +1,47 @@
-# Slurm Workload Manager - Project Overview
+# Slurm 工作負載管理器 - 專案概覽
 
-> Generated: 2025-12-17 | Version: 26.05.0-0rc1
+> 產生日期：2025-12-17 | 版本：26.05.0-0rc1
 
-## What is Slurm?
+## 什麼是 Slurm？
 
-Slurm (Simple Linux Utility for Resource Management) is an open-source, highly scalable cluster management and job scheduling system for Linux clusters. Originally developed at Lawrence Livermore National Laboratory, it is now maintained by SchedMD LLC.
+Slurm（Simple Linux Utility for Resource Management，簡易 Linux 資源管理工具）是一套開放原始碼、高度可擴展的叢集管理與作業排程系統，專為 Linux 叢集設計。最初由勞倫斯利佛摩國家實驗室開發，現由 SchedMD LLC 維護。
 
-**Key Capabilities:**
-- Allocates exclusive/non-exclusive access to compute nodes
-- Provides framework for starting, executing, and monitoring parallel jobs
-- Arbitrates conflicting resource requests via a job queue
-- Supports clusters from small workgroups to millions of cores
+**主要功能：**
+- 分配計算節點的獨佔或非獨佔存取權限
+- 提供啟動、執行和監控平行作業的框架
+- 透過作業佇列仲裁衝突的資源請求
+- 支援從小型工作群組到數百萬核心的叢集
 
 ---
 
-## Quick Reference
+## 快速參考
 
-| Property | Value |
-|----------|-------|
-| **Project Name** | Slurm Workload Manager |
-| **Version** | 26.05.0-0rc1 |
-| **Protocol Version** | v45 |
-| **Primary Language** | C (C99) |
-| **Build System** | GNU Autotools |
-| **License** | GPLv2+ |
-| **Repository Type** | Monolith |
-| **Project Types** | backend, infra, cli |
+| 屬性 | 值 |
+|------|-----|
+| **專案名稱** | Slurm 工作負載管理器 |
+| **版本** | 26.05.0-0rc1 |
+| **協定版本** | v45 |
+| **主要語言** | C (C99) |
+| **建置系統** | GNU Autotools |
+| **授權** | GPLv2+ |
+| **儲存庫類型** | 單體式 |
+| **專案類型** | 後端、基礎設施、CLI |
 
-### Technology Stack
+### 技術堆疊
 
-| Category | Technology |
-|----------|------------|
-| Core Language | C (C99) |
-| Database | MySQL / MariaDB 5.0+ |
-| Authentication | MUNGE (default), JWT |
-| Build | autoconf, automake, libtool |
-| Testing | Check, Expect, Pytest |
-| Serialization | Custom binary, JSON, YAML |
+| 類別 | 技術 |
+|------|------|
+| 核心語言 | C (C99) |
+| 資料庫 | MySQL / MariaDB 5.0+ |
+| 驗證 | MUNGE（預設）、JWT |
+| 建置 | autoconf、automake、libtool |
+| 測試 | Check、Expect、Pytest |
+| 序列化 | 自訂二進位、JSON、YAML |
 
-### Network Ports
+### 網路連接埠
 
-| Service | Port |
-|---------|------|
+| 服務 | 連接埠 |
+|------|--------|
 | slurmctld | 6817 |
 | slurmd | 6818 |
 | slurmdbd | 6819 |
@@ -49,122 +49,126 @@ Slurm (Simple Linux Utility for Resource Management) is an open-source, highly s
 
 ---
 
-## Architecture Summary
+## 架構摘要
 
 ```
-Users → CLI Tools/REST API → slurmctld (Controller)
+使用者 → CLI 工具/REST API → slurmctld（控制器）
                                     ↓
-                             slurmd (Nodes)
+                             slurmd（節點）
                                     ↓
-                          slurmstepd (Tasks)
+                          slurmstepd（任務）
                                     ↓
                             slurmdbd → MySQL
 ```
 
-### Core Components
+### 核心元件
 
-| Component | Purpose |
-|-----------|---------|
-| **slurmctld** | Central controller - scheduling, allocation |
-| **slurmd** | Node daemon - job execution |
-| **slurmstepd** | Step manager - task management |
-| **slurmdbd** | Database daemon - accounting |
-| **slurmrestd** | REST API daemon - HTTP interface |
+| 元件 | 用途 |
+|------|------|
+| **slurmctld** | 中央控制器 - 排程、資源分配 |
+| **slurmd** | 節點守護程式 - 作業執行 |
+| **slurmstepd** | 步驟管理器 - 任務管理 |
+| **slurmdbd** | 資料庫守護程式 - 記帳 |
+| **slurmrestd** | REST API 守護程式 - HTTP 介面 |
 
-### CLI Tools
+### CLI 工具
 
-| Category | Tools |
-|----------|-------|
-| Job Submission | sbatch, srun, salloc |
-| Job Control | scancel, sattach, sbcast |
-| Monitoring | squeue, sinfo, sstat, sacct, sdiag |
-| Administration | scontrol, sacctmgr, sreport |
-| Utilities | sprio, sshare, strigger, scrontab |
-
----
-
-## Project Statistics
-
-| Metric | Count |
-|--------|-------|
-| C Source Files | 679 |
-| Header Files | 419 |
-| Plugin Categories | 38 |
-| CLI Tools | 19 |
-| Daemons | 6 |
-| HTML Doc Pages | 91 |
-| Man Pages | 44 |
-| Estimated LOC | 500,000+ |
+| 類別 | 工具 |
+|------|------|
+| 作業提交 | sbatch、srun、salloc |
+| 作業控制 | scancel、sattach、sbcast |
+| 監控 | squeue、sinfo、sstat、sacct、sdiag |
+| 管理 | scontrol、sacctmgr、sreport |
+| 公用程式 | sprio、sshare、strigger、scrontab |
 
 ---
 
-## Key Features
+## 專案統計
 
-### Scheduling
-- Multiple scheduling plugins (FIFO, backfill)
-- Fair-share scheduling
-- Job priority with multiple factors
-- Preemption support
-- Reservations and maintenance windows
-
-### Resource Management
-- CPU, memory, GPU allocation
-- Generic resource (GRES) framework
-- Consumable resources tracking
-- Topology-aware scheduling
-- NUMA-aware placement
-
-### Accounting
-- Job completion logging
-- Resource usage tracking
-- User/account/QoS hierarchies
-- Fair-share calculations
-- Multi-cluster federation
-
-### Security
-- MUNGE authentication
-- JWT token support
-- Job credential signing
-- Resource limit enforcement
-- Cgroup isolation
+| 指標 | 數量 |
+|------|------|
+| C 原始碼檔案 | 679 |
+| 標頭檔 | 419 |
+| 外掛類別 | 38 |
+| CLI 工具 | 19 |
+| 守護程式 | 6 |
+| HTML 文件頁面 | 91 |
+| Man 手冊頁面 | 44 |
+| 預估程式碼行數 | 500,000+ |
 
 ---
 
-## Getting Started
+## 主要特色
 
-### For Users
+### 排程
+
+- 多種排程外掛（FIFO、backfill）
+- 公平共用排程
+- 多因素作業優先級
+- 搶佔支援
+- 保留與維護時段
+
+### 資源管理
+
+- CPU、記憶體、GPU 分配
+- 通用資源（GRES）框架
+- 可消耗資源追蹤
+- 拓樸感知排程
+- NUMA 感知放置
+
+### 記帳
+
+- 作業完成記錄
+- 資源使用追蹤
+- 使用者/帳戶/QoS 階層
+- 公平共用計算
+- 多叢集聯邦
+
+### 安全性
+
+- MUNGE 驗證
+- JWT 權杖支援
+- 作業憑證簽章
+- 資源限制強制執行
+- Cgroup 隔離
+
+---
+
+## 快速入門
+
+### 使用者
 
 ```bash
-# Submit a batch job
+# 提交批次作業
 sbatch myjob.sh
 
-# Run an interactive job
+# 執行互動式作業
 srun --pty bash
 
-# Check job queue
+# 檢查作業佇列
 squeue -u $USER
 
-# Check cluster status
+# 檢查叢集狀態
 sinfo
 ```
 
-### For Administrators
+### 管理員
 
 ```bash
-# Configure: Edit /etc/slurm/slurm.conf
-# Start services:
+# 設定：編輯 /etc/slurm/slurm.conf
+# 啟動服務：
 systemctl start slurmctld
 systemctl start slurmd
 
-# Check diagnostics
+# 檢查診斷
 sdiag
 scontrol show config
 ```
 
-### For Developers
+### 開發者
 
 ```bash
-# Build from source
+# 從原始碼建置
 ./configure --prefix=/usr/local
 make -j$(nproc)
 sudo make install
@@ -172,20 +176,20 @@ sudo make install
 
 ---
 
-## Documentation Links
+## 文件連結
 
-- **Official Site**: https://slurm.schedmd.com/
-- **Admin Guide**: https://slurm.schedmd.com/quickstart_admin.html
-- **User Guide**: https://slurm.schedmd.com/quickstart.html
-- **API Reference**: https://slurm.schedmd.com/api.html
-- **Issue Tracker**: https://support.schedmd.com/
+- **官方網站**：https://slurm.schedmd.com/
+- **管理員指南**：https://slurm.schedmd.com/quickstart_admin.html
+- **使用者指南**：https://slurm.schedmd.com/quickstart.html
+- **API 參考**：https://slurm.schedmd.com/api.html
+- **問題追蹤**：https://support.schedmd.com/
 
 ---
 
-## Related Files in This Documentation Set
+## 本文件集的相關檔案
 
-- [Architecture](./architecture.md) - System architecture details
-- [Source Tree Analysis](./source-tree-analysis.md) - Code organization
-- [API Contracts](./api-contracts.md) - REST API endpoints
-- [Data Models](./data-models.md) - Database structures
-- [Development Guide](./development-guide.md) - Build and contribute
+- [架構文件](./architecture.md) - 系統架構詳細說明
+- [原始碼樹狀分析](./source-tree-analysis.md) - 程式碼組織
+- [API 契約](./api-contracts.md) - REST API 端點
+- [資料模型](./data-models.md) - 資料庫結構
+- [開發指南](./development-guide.md) - 建置與貢獻

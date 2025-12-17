@@ -1,226 +1,226 @@
-# Slurm Source Tree Analysis
+# Slurm 原始碼樹狀分析
 
-> Generated: 2025-12-17 | Scan Level: Exhaustive
+> 產生日期：2025-12-17 | 掃描等級：完整掃描
 
-## Project Overview
+## 專案概覽
 
-- **Project Name**: Slurm Workload Manager
-- **Version**: 26.05.0-0rc1
-- **Repository Type**: Monolith
-- **Primary Language**: C (C99)
-- **Build System**: GNU Autotools
+- **專案名稱**：Slurm 工作負載管理器
+- **版本**：26.05.0-0rc1
+- **儲存庫類型**：單體式
+- **主要語言**：C (C99)
+- **建置系統**：GNU Autotools
 
 ---
 
-## Directory Structure
+## 目錄結構
 
 ```
 slurm/
-├── src/                          # Main source code (679 .c files, 419 .h files)
-│   ├── api/                      # Slurm C API library
-│   ├── common/                   # Shared utilities and data structures
-│   ├── conmgr/                   # Connection manager
-│   ├── curl/                     # HTTP/CURL utilities
-│   ├── database/                 # Database abstraction layer (MySQL)
-│   ├── interfaces/               # Plugin interface definitions
-│   ├── lua/                      # Lua scripting integration
+├── src/                          # 主要原始碼（679 個 .c 檔案，419 個 .h 檔案）
+│   ├── api/                      # Slurm C API 函式庫
+│   ├── common/                   # 共用工具和資料結構
+│   ├── conmgr/                   # 連線管理器
+│   ├── curl/                     # HTTP/CURL 工具
+│   ├── database/                 # 資料庫抽象層（MySQL）
+│   ├── interfaces/               # 外掛介面定義
+│   ├── lua/                      # Lua 腳本整合
 │   │
-│   ├── slurmctld/                # Central control daemon [DAEMON]
-│   ├── slurmd/                   # Node daemon [DAEMON]
-│   │   ├── slurmd/               # Main slurmd code
-│   │   ├── slurmstepd/           # Job step manager
-│   │   └── common/               # Shared slurmd components
-│   ├── slurmdbd/                 # Database daemon [DAEMON]
-│   ├── slurmrestd/               # REST API daemon [DAEMON]
-│   │   └── plugins/              # REST API plugins
-│   │       ├── auth/             # JWT, local auth
-│   │       └── openapi/          # OpenAPI endpoint handlers
-│   ├── sackd/                    # Accounting keepalive daemon [DAEMON]
+│   ├── slurmctld/                # 中央控制守護程式 [守護程式]
+│   ├── slurmd/                   # 節點守護程式 [守護程式]
+│   │   ├── slurmd/               # 主要 slurmd 程式碼
+│   │   ├── slurmstepd/           # 作業步驟管理器
+│   │   └── common/               # 共用 slurmd 元件
+│   ├── slurmdbd/                 # 資料庫守護程式 [守護程式]
+│   ├── slurmrestd/               # REST API 守護程式 [守護程式]
+│   │   └── plugins/              # REST API 外掛
+│   │       ├── auth/             # JWT、本機驗證
+│   │       └── openapi/          # OpenAPI 端點處理器
+│   ├── sackd/                    # 記帳保活守護程式 [守護程式]
 │   │
-│   ├── sbatch/                   # Batch job submission [CLI]
-│   ├── srun/                     # Parallel job launcher [CLI]
-│   ├── salloc/                   # Interactive allocation [CLI]
-│   ├── sattach/                  # Job attachment [CLI]
-│   ├── scancel/                  # Job cancellation [CLI]
-│   ├── sbcast/                   # File broadcast [CLI]
-│   ├── squeue/                   # Job queue display [CLI]
-│   ├── sinfo/                    # Cluster info display [CLI]
-│   ├── sstat/                    # Running job stats [CLI]
-│   ├── sacct/                    # Accounting reports [CLI]
-│   ├── sdiag/                    # Diagnostics [CLI]
-│   ├── sprio/                    # Priority display [CLI]
-│   ├── scontrol/                 # Admin tool [CLI]
-│   ├── sacctmgr/                 # Accounting management [CLI]
-│   ├── sreport/                  # Accounting reports [CLI]
-│   ├── sshare/                   # Fair-share info [CLI]
-│   ├── strigger/                 # Event triggers [CLI]
-│   ├── scrontab/                 # Cron scheduling [CLI]
-│   ├── scrun/                    # Container launcher [CLI]
-│   ├── stepmgr/                  # Step management [CLI]
-│   ├── sview/                    # GUI monitoring [CLI]
-│   ├── bcast/                    # Broadcast library
+│   ├── sbatch/                   # 批次作業提交 [CLI]
+│   ├── srun/                     # 平行作業啟動器 [CLI]
+│   ├── salloc/                   # 互動式分配 [CLI]
+│   ├── sattach/                  # 作業附加 [CLI]
+│   ├── scancel/                  # 作業取消 [CLI]
+│   ├── sbcast/                   # 檔案廣播 [CLI]
+│   ├── squeue/                   # 作業佇列顯示 [CLI]
+│   ├── sinfo/                    # 叢集資訊顯示 [CLI]
+│   ├── sstat/                    # 執行中作業統計 [CLI]
+│   ├── sacct/                    # 記帳報告 [CLI]
+│   ├── sdiag/                    # 診斷 [CLI]
+│   ├── sprio/                    # 優先級顯示 [CLI]
+│   ├── scontrol/                 # 管理工具 [CLI]
+│   ├── sacctmgr/                 # 記帳管理 [CLI]
+│   ├── sreport/                  # 記帳報告 [CLI]
+│   ├── sshare/                   # 公平共用資訊 [CLI]
+│   ├── strigger/                 # 事件觸發器 [CLI]
+│   ├── scrontab/                 # Cron 排程 [CLI]
+│   ├── scrun/                    # 容器啟動器 [CLI]
+│   ├── stepmgr/                  # 步驟管理 [CLI]
+│   ├── sview/                    # GUI 監控 [CLI]
+│   ├── bcast/                    # 廣播函式庫
 │   │
-│   └── plugins/                  # Plugin system (38 categories)
-│       ├── accounting_storage/   # Database backends
-│       ├── acct_gather_*/        # Accounting collectors
-│       ├── auth/                 # Authentication (munge, jwt, none, slurm)
-│       ├── burst_buffer/         # Burst buffer management
-│       ├── cgroup/               # Cgroup v1/v2 support
-│       ├── cli_filter/           # CLI command filtering
-│       ├── cred/                 # Credential management
-│       ├── data_parser/          # Data parsing plugins
-│       ├── gpu/                  # GPU management (nvidia, amd, intel)
-│       ├── gres/                 # Generic resources
-│       ├── hash/                 # Hash algorithms
-│       ├── job_submit/           # Job submission hooks
-│       ├── jobacct_gather/       # Job accounting
-│       ├── jobcomp/              # Job completion logging
-│       ├── mcs/                  # Multi-Category Security
-│       ├── mpi/                  # MPI support (pmix, pmi2)
-│       ├── node_features/        # Node feature management
-│       ├── preempt/              # Job preemption
-│       ├── priority/             # Priority calculation
-│       ├── proctrack/            # Process tracking
-│       ├── sched/                # Schedulers (builtin, backfill)
-│       ├── select/               # Resource selection (linear, cons_tres)
-│       ├── serializer/           # Data serialization
-│       ├── switch/               # Network switch support
-│       ├── task/                 # Task management
-│       ├── tls/                  # TLS encryption
-│       └── topology/             # Cluster topology
+│   └── plugins/                  # 外掛系統（38 種類別）
+│       ├── accounting_storage/   # 資料庫後端
+│       ├── acct_gather_*/        # 記帳收集器
+│       ├── auth/                 # 驗證（munge、jwt、none、slurm）
+│       ├── burst_buffer/         # 突發緩衝區管理
+│       ├── cgroup/               # Cgroup v1/v2 支援
+│       ├── cli_filter/           # CLI 命令過濾
+│       ├── cred/                 # 憑證管理
+│       ├── data_parser/          # 資料解析外掛
+│       ├── gpu/                  # GPU 管理（nvidia、amd、intel）
+│       ├── gres/                 # 通用資源
+│       ├── hash/                 # 雜湊演算法
+│       ├── job_submit/           # 作業提交鉤子
+│       ├── jobacct_gather/       # 作業記帳
+│       ├── jobcomp/              # 作業完成日誌
+│       ├── mcs/                  # 多類別安全
+│       ├── mpi/                  # MPI 支援（pmix、pmi2）
+│       ├── node_features/        # 節點功能管理
+│       ├── preempt/              # 作業搶佔
+│       ├── priority/             # 優先級計算
+│       ├── proctrack/            # 程序追蹤
+│       ├── sched/                # 排程器（builtin、backfill）
+│       ├── select/               # 資源選擇（linear、cons_tres）
+│       ├── serializer/           # 資料序列化
+│       ├── switch/               # 網路交換器支援
+│       ├── task/                 # 任務管理
+│       ├── tls/                  # TLS 加密
+│       └── topology/             # 叢集拓樸
 │
-├── slurm/                        # Public header files
-│   ├── slurm.h                   # Main API header
-│   ├── slurmdb.h                 # Accounting database API
-│   ├── slurm_errno.h             # Error codes
-│   ├── spank.h                   # SPANK plugin API
-│   └── pmi.h                     # PMI interface
+├── slurm/                        # 公開標頭檔
+│   ├── slurm.h                   # 主要 API 標頭
+│   ├── slurmdb.h                 # 記帳資料庫 API
+│   ├── slurm_errno.h             # 錯誤代碼
+│   ├── spank.h                   # SPANK 外掛 API
+│   └── pmi.h                     # PMI 介面
 │
-├── doc/                          # Documentation
-│   ├── html/                     # 91 HTML documentation pages
-│   └── man/                      # Man pages
-│       ├── man1/                 # 22 command manuals
-│       ├── man5/                 # 15 config file manuals
-│       └── man8/                 # 7 admin manuals
+├── doc/                          # 文件
+│   ├── html/                     # 91 個 HTML 文件頁面
+│   └── man/                      # Man 手冊頁面
+│       ├── man1/                 # 22 個命令手冊
+│       ├── man5/                 # 15 個設定檔手冊
+│       └── man8/                 # 7 個管理手冊
 │
-├── etc/                          # Configuration examples
-│   └── slurm.conf.example        # Sample configuration
+├── etc/                          # 設定範例
+│   └── slurm.conf.example        # 範例設定
 │
-├── testsuite/                    # Test suite
-│   ├── expect/                   # Expect-based functional tests
-│   ├── python/                   # Python tests
-│   └── slurm_unit/               # Unit tests (Check framework)
+├── testsuite/                    # 測試套件
+│   ├── expect/                   # 基於 Expect 的功能測試
+│   ├── python/                   # Python 測試
+│   └── slurm_unit/               # 單元測試（Check 框架）
 │
-├── contribs/                     # Contributed modules
-│   ├── lua/                      # Lua bindings
+├── contribs/                     # 貢獻的模組
+│   ├── lua/                      # Lua 綁定
 │   ├── perlapi/                  # Perl API
-│   ├── pam/                      # PAM modules
-│   ├── pam_slurm_adopt/          # PAM adoption module
-│   ├── pmi/                      # PMI library
-│   ├── pmi2/                     # PMI2 library
-│   ├── torque/                   # Torque compatibility
-│   └── openlava/                 # OpenLava compatibility
+│   ├── pam/                      # PAM 模組
+│   ├── pam_slurm_adopt/          # PAM 採用模組
+│   ├── pmi/                      # PMI 函式庫
+│   ├── pmi2/                     # PMI2 函式庫
+│   ├── torque/                   # Torque 相容性
+│   └── openlava/                 # OpenLava 相容性
 │
-├── auxdir/                       # Autotools support files
-│   ├── *.m4                      # Autoconf macros
-│   └── slurm.m4                  # Slurm-specific macros
+├── auxdir/                       # Autotools 支援檔案
+│   ├── *.m4                      # Autoconf 巨集
+│   └── slurm.m4                  # Slurm 專用巨集
 │
-├── debian/                       # Debian packaging
+├── debian/                       # Debian 套件
 │
-├── tools/                        # Build and utility scripts
+├── tools/                        # 建置和工具腳本
 │
-├── configure.ac                  # Autoconf configuration
-├── Makefile.am                   # Automake template
-├── slurm.spec                    # RPM spec file
-├── META                          # Version metadata
-├── README.md                     # Project readme
-├── INSTALL                       # Installation instructions
-├── CONTRIBUTING.md               # Contribution guidelines
-├── COPYING                       # GPL license
-└── CHANGELOG/                    # Version changelogs
+├── configure.ac                  # Autoconf 設定
+├── Makefile.am                   # Automake 範本
+├── slurm.spec                    # RPM 規格檔
+├── META                          # 版本元資料
+├── README.md                     # 專案說明
+├── INSTALL                       # 安裝說明
+├── CONTRIBUTING.md               # 貢獻指南
+├── COPYING                       # GPL 授權
+└── CHANGELOG/                    # 版本變更日誌
 ```
 
 ---
 
-## Critical Directories
+## 關鍵目錄
 
-### 1. Core Daemons (`src/slurmctld/`, `src/slurmd/`, `src/slurmdbd/`, `src/slurmrestd/`)
+### 1. 核心守護程式（`src/slurmctld/`、`src/slurmd/`、`src/slurmdbd/`、`src/slurmrestd/`）
 
-| Directory | Entry Point | Purpose |
-|-----------|-------------|---------|
-| `src/slurmctld/` | `controller.c:main()` | Central controller - job scheduling, resource management |
-| `src/slurmd/slurmd/` | `slurmd.c:main()` | Node daemon - local job execution |
-| `src/slurmd/slurmstepd/` | `slurmstepd.c:main()` | Job step manager - task execution |
-| `src/slurmdbd/` | `slurmdbd.c:main()` | Database daemon - accounting |
-| `src/slurmrestd/` | `slurmrestd.c:main()` | REST API daemon - HTTP interface |
-| `src/sackd/` | `sackd.c:main()` | Accounting keepalive daemon |
+| 目錄 | 進入點 | 用途 |
+|------|--------|------|
+| `src/slurmctld/` | `controller.c:main()` | 中央控制器 - 作業排程、資源管理 |
+| `src/slurmd/slurmd/` | `slurmd.c:main()` | 節點守護程式 - 本機作業執行 |
+| `src/slurmd/slurmstepd/` | `slurmstepd.c:main()` | 作業步驟管理器 - 任務執行 |
+| `src/slurmdbd/` | `slurmdbd.c:main()` | 資料庫守護程式 - 記帳 |
+| `src/slurmrestd/` | `slurmrestd.c:main()` | REST API 守護程式 - HTTP 介面 |
+| `src/sackd/` | `sackd.c:main()` | 記帳保活守護程式 |
 
-### 2. CLI Tools (`src/s*/`)
+### 2. CLI 工具（`src/s*/`）
 
-| Tool | File | Purpose |
-|------|------|---------|
-| sbatch | `src/sbatch/sbatch.c` | Submit batch jobs |
-| srun | `src/srun/srun.c` | Run parallel jobs |
-| salloc | `src/salloc/salloc.c` | Interactive allocation |
-| squeue | `src/squeue/squeue.c` | View job queue |
-| sinfo | `src/sinfo/sinfo.c` | View cluster info |
-| scontrol | `src/scontrol/scontrol.c` | Admin control |
-| sacct | `src/sacct/sacct.c` | Accounting reports |
-| scancel | `src/scancel/scancel.c` | Cancel jobs |
+| 工具 | 檔案 | 用途 |
+|------|------|------|
+| sbatch | `src/sbatch/sbatch.c` | 提交批次作業 |
+| srun | `src/srun/srun.c` | 執行平行作業 |
+| salloc | `src/salloc/salloc.c` | 互動式分配 |
+| squeue | `src/squeue/squeue.c` | 檢視作業佇列 |
+| sinfo | `src/sinfo/sinfo.c` | 檢視叢集資訊 |
+| scontrol | `src/scontrol/scontrol.c` | 管理控制 |
+| sacct | `src/sacct/sacct.c` | 記帳報告 |
+| scancel | `src/scancel/scancel.c` | 取消作業 |
 
-### 3. Common Libraries (`src/common/`)
+### 3. 共用函式庫（`src/common/`）
 
-Critical files:
-- `job_record.h/c` - Job data structures
-- `node_conf.h/c` - Node configuration
-- `part_record.h/c` - Partition management
-- `slurm_protocol_*.h/c` - RPC protocol
-- `pack.h/c` - Serialization
-- `log.h/c` - Logging
-- `xmalloc.h/c` - Memory management
+關鍵檔案：
+- `job_record.h/c` - 作業資料結構
+- `node_conf.h/c` - 節點設定
+- `part_record.h/c` - 分割區管理
+- `slurm_protocol_*.h/c` - RPC 協定
+- `pack.h/c` - 序列化
+- `log.h/c` - 日誌
+- `xmalloc.h/c` - 記憶體管理
 
-### 4. Plugin System (`src/plugins/`)
+### 4. 外掛系統（`src/plugins/`）
 
-38 plugin categories with 100+ implementations. Key categories:
+38 種外掛類別，超過 100 種實作。主要類別：
 
-| Category | Implementations | Purpose |
-|----------|-----------------|---------|
-| `auth/` | jwt, munge, none, slurm | Authentication |
-| `select/` | linear, cons_tres | Resource selection |
-| `sched/` | builtin, backfill | Job scheduling |
-| `accounting_storage/` | mysql, slurmdbd, ctld_relay | Accounting storage |
-| `cgroup/` | v1, v2 | Resource isolation |
-
----
-
-## Key File Locations
-
-### Configuration Files
-- `etc/slurm.conf.example` - Main configuration template
-- `etc/slurmdbd.conf.example` - Database daemon config
-- `etc/cgroup.conf.example` - Cgroup configuration
-
-### Public Headers
-- `slurm/slurm.h` - Main Slurm API
-- `slurm/slurmdb.h` - Accounting API
-- `slurm/spank.h` - SPANK plugin API
-
-### Entry Points
-- `src/slurmctld/controller.c` - Controller daemon
-- `src/slurmd/slurmd/slurmd.c` - Node daemon
-- `src/slurmrestd/slurmrestd.c` - REST daemon
+| 類別 | 實作 | 用途 |
+|------|------|------|
+| `auth/` | jwt、munge、none、slurm | 驗證 |
+| `select/` | linear、cons_tres | 資源選擇 |
+| `sched/` | builtin、backfill | 作業排程 |
+| `accounting_storage/` | mysql、slurmdbd、ctld_relay | 記帳儲存 |
+| `cgroup/` | v1、v2 | 資源隔離 |
 
 ---
 
-## Statistics
+## 關鍵檔案位置
 
-| Metric | Count |
-|--------|-------|
-| C source files (.c) | 679 |
-| Header files (.h) | 419 |
-| Plugin categories | 38 |
-| CLI tools | 19 |
-| Daemons | 6 |
-| HTML doc pages | 91 |
-| Man pages | 44 |
-| Lines of code (est.) | 500,000+ |
+### 設定檔
+- `etc/slurm.conf.example` - 主要設定範本
+- `etc/slurmdbd.conf.example` - 資料庫守護程式設定
+- `etc/cgroup.conf.example` - Cgroup 設定
+
+### 公開標頭
+- `slurm/slurm.h` - 主要 Slurm API
+- `slurm/slurmdb.h` - 記帳 API
+- `slurm/spank.h` - SPANK 外掛 API
+
+### 進入點
+- `src/slurmctld/controller.c` - 控制器守護程式
+- `src/slurmd/slurmd/slurmd.c` - 節點守護程式
+- `src/slurmrestd/slurmrestd.c` - REST 守護程式
+
+---
+
+## 統計資料
+
+| 指標 | 數量 |
+|------|------|
+| C 原始碼檔案 (.c) | 679 |
+| 標頭檔 (.h) | 419 |
+| 外掛類別 | 38 |
+| CLI 工具 | 19 |
+| 守護程式 | 6 |
+| HTML 文件頁面 | 91 |
+| Man 手冊頁面 | 44 |
+| 預估程式碼行數 | 500,000+ |
