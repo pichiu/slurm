@@ -1742,6 +1742,32 @@ void env_array_free(char **env_array)
 }
 
 /*
+ * Free the memory used by an env_options env_t struct.
+ */
+extern void env_opts_free(env_t **envtp)
+{
+	if (!envtp || !*envtp)
+		return;
+	xfree((*envtp)->account);
+	/* xfree((*envtp)->cli); DON'T FREE - ref only */
+	xfree((*envtp)->cpu_bind);
+	env_array_free((*envtp)->env);
+	xfree((*envtp)->group_name);
+	xfree((*envtp)->job_licenses);
+	xfree((*envtp)->job_name);
+	xfree((*envtp)->mem_bind);
+	xfree((*envtp)->nodelist);
+	xfree((*envtp)->partition);
+	xfree((*envtp)->qos);
+	xfree((*envtp)->resv_name);
+	xfree((*envtp)->sgtids);
+	xfree((*envtp)->task_count);
+	/* xfree((*envtp)->tls_cert); DON'T FREE - ref only */
+	xfree((*envtp)->user_name);
+	xfree(*envtp);
+}
+
+/*
  * Given an environment variable "name=value" string,
  * copy the name portion into the "name" buffer, and the
  * value portion into the "value" buffer.
@@ -2640,4 +2666,28 @@ extern void set_prio_process_env(void)
         }
 
         debug("propagating SLURM_PRIO_PROCESS=%d", retval);
+}
+
+extern void set_submit_dir_env(char **wd_ptr, bool set_cluster_name)
+{
+	char host[256], work_dir[PATH_MAX];
+
+	if (set_cluster_name) {
+		if (setenvf(NULL, "SLURM_CLUSTER_NAME", "%s",
+			    slurm_conf.cluster_name) < 0)
+			error("unable to set SLURM_CLUSTER_NAME in environment");
+	}
+
+	if ((getcwd(work_dir, PATH_MAX)) == NULL)
+		error("getcwd failed: %m");
+	else if (setenvf(NULL, "SLURM_SUBMIT_DIR", "%s", work_dir) < 0)
+		error("unable to set SLURM_SUBMIT_DIR in environment");
+
+	if ((gethostname(host, sizeof(host))))
+		error("gethostname failed: %m");
+	else if (setenvf(NULL, "SLURM_SUBMIT_HOST", "%s", host) < 0)
+		error("unable to set SLURM_SUBMIT_HOST in environment");
+
+	if (wd_ptr && work_dir[0])
+		*wd_ptr = xstrdup(work_dir);
 }

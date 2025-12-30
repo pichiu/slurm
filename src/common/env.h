@@ -61,7 +61,7 @@ typedef struct env_options {
 	char *partition;	/* partition name */
 	char **env;             /* job environment */
 	uint16_t comm_port;	/* srun's communication port */
-	slurm_addr_t *cli;	/* launch node address */
+	slurm_addr_t *cli; /* launch node address - DON'T FREE, ref only */
 	char *job_name;		/* assigned job name */
 	int jobid;		/* assigned job id */
 	int stepid;	        /* assigned step id */
@@ -94,7 +94,7 @@ typedef struct env_options {
 	char *job_licenses;	/* job's licenses */
 	time_t job_start_time;  /* job's start time */
 	uint16_t oom_kill_step;   /* --oom-kill-step */
-	char *tls_cert;		/* srun TLS certificate */
+	char *tls_cert; /* srun TLS certificate - DON'T FREE, ref only */
 } env_t;
 
 
@@ -243,6 +243,11 @@ char **env_array_copy(const char **array);
  * Free the memory used by an environment variable array.
  */
 void env_array_free(char **env_array);
+
+/*
+ * Free the memory used by an env_options env_t struct.
+ */
+extern void env_opts_free(env_t **envtp);
 
 /*
  * Append a single environment variable to an environment variable array,
@@ -405,5 +410,12 @@ extern void env_merge_filter(slurm_opt_t *opt, job_desc_msg_t *desc);
  * config keyword.
  */
 extern void set_prio_process_env(void);
+
+/*
+ * Set environment variables for the job submission.
+ * IN/OUT: wd_ptr - If not NULL, return a xstrdup() of the cwd.
+ * IN: set_cluster_name - Whether to set the SLURM_CLUSTER_NAME env var or not.
+ */
+extern void set_submit_dir_env(char **wd_ptr, bool set_cluster_name);
 
 #endif
