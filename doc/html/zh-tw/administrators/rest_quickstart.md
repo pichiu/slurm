@@ -13,11 +13,11 @@ Slurm 透過 slurmrestd 守護程式提供 REST API，使用 JWT 進行認證。
 Slurm 透過 slurmrestd 守護程式提供 [REST API](https://restfulapi.net/)，使用 [JSON Web Tokens](jwt.md) 進行認證。此守護程式旨在允許客戶端透過 REST API（除了命令列介面 (CLI) 或 C API 外）與 Slurm 通訊。
 
 **相關文件**：
-- [REST API 詳細資訊](rest.html)
+- [REST API 詳細資訊](rest.md)
 - [REST API 方法和模型](rest_api.html)
 - [slurmrestd man page](slurmrestd.html)
-- [OpenAPI 外掛程式發行說明](openapi_release_notes.html)
-- [REST API 客戶端指南](rest_clients.html)
+- [OpenAPI 外掛程式發行說明](openapi_release_notes.md)
+- [REST API 客戶端指南](rest_clients.md)
 
 ---
 
@@ -187,7 +187,7 @@ systemctl revert slurmrestd
 
 ### 進階使用
 
-關於進一步自訂和設定 slurmrestd 的資訊，包括認證方法、執行模式、外掛程式、高可用性、代理和 Python 客戶端，請參閱 [REST API 詳細資訊](rest.html)頁面。
+關於進一步自訂和設定 slurmrestd 的資訊，包括認證方法、執行模式、外掛程式、高可用性、代理和 Python 客戶端，請參閱 [REST API 詳細資訊](rest.md)頁面。
 
 ---
 
@@ -374,6 +374,6 @@ systemctl edit slurmrestd
 ### 相關文件
 
 - [JWT 認證](jwt.md) - JWT 設定
-- [REST API 詳細資訊](rest.html) - 進階設定
+- [REST API 詳細資訊](rest.md) - 進階設定
 - [REST API 方法和模型](rest_api.html) - API 參考
 - [計費](accounting.md) - 計費設定

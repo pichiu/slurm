@@ -407,5 +407,5 @@ netstat -an | grep 6817 | wc -l
 
 - [slurm.conf](slurm.conf.html) - 主要設定檔
 - [排程設定](sched_config.md) - 排程器調校
-- [高吞吐量計算](high_throughput.html) - 高吞吐量設定
+- [高吞吐量計算](high_throughput.md) - 高吞吐量設定
 - [疑難排解](troubleshoot.md) - 問題排解

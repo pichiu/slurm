@@ -368,4 +368,4 @@ AccountingStorageTRES=license/fluent,license/ansys
 
 - [計費設定](accounting.md)
 - [資源限制](resource_limits.md)
-- [TRES](tres.html)
+- [TRES](tres.md)

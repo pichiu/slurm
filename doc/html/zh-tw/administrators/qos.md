@@ -32,7 +32,7 @@
 
 #### 排程優先級
 
-作業排程優先級由多個因素組成，如 [priority/multifactor](priority_multifactor.html) 外掛程式中所述。其中一個因素是 QOS 優先級。每個 QOS 在 Slurm 資料庫中定義，並包含一個關聯的優先級。請求並被允許使用 QOS 的作業將在作業的[多因素優先級計算](priority_multifactor.html#general)中納入與該 QOS 關聯的優先級。
+作業排程優先級由多個因素組成，如 [priority/multifactor](priority_multifactor.md) 外掛程式中所述。其中一個因素是 QOS 優先級。每個 QOS 在 Slurm 資料庫中定義，並包含一個關聯的優先級。請求並被允許使用 QOS 的作業將在作業的[多因素優先級計算](priority_multifactor.html#general)中納入與該 QOS 關聯的優先級。
 
 要啟用多因素優先級計算中的 QOS 優先級組件，必須在 slurm.conf 檔案中定義「PriorityWeightQOS」配置參數並賦予大於零的整數值。
 
@@ -40,7 +40,7 @@
 
 #### 搶占
 
-Slurm 提供兩種方式讓排隊中的作業搶占執行中的作業、釋放執行中作業的資源並將其分配給排隊中的作業。詳見[搶占說明](preempt.html)。
+Slurm 提供兩種方式讓排隊中的作業搶占執行中的作業、釋放執行中作業的資源並將其分配給排隊中的作業。詳見[搶占說明](preempt.md)。
 
 搶占方法由 slurm.conf 中定義的「PreemptType」配置參數決定。當「PreemptType」設定為「preempt/qos」時，排隊中作業的 QOS 將用於確定它是否可以搶占執行中的作業。需要注意的是，用於確定作業是否有資格被搶占的 QOS 是與作業關聯的 QOS，而不是[分割區 QOS](#分割區-qos)。
 
@@ -50,7 +50,7 @@ QOS 選項 PreemptExemptTime 指定作業被考慮搶占前的最短執行時間
 
 #### 資源限制
 
-每個 QOS 被分配一組將應用於作業的限制。這些限制與 Slurm 資料庫中定義的使用者/帳號/叢集/分割區關聯所施加的限制相同，並在[資源限制頁面](resource_limits.html)中描述。當為 QOS 定義了限制時，它們將優先於關聯的限制。
+每個 QOS 被分配一組將應用於作業的限制。這些限制與 Slurm 資料庫中定義的使用者/帳號/叢集/分割區關聯所施加的限制相同，並在[資源限制頁面](resource_limits.md)中描述。當為 QOS 定義了限制時，它們將優先於關聯的限制。
 
 ### 分割區 QOS
 

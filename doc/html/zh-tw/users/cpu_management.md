@@ -21,8 +21,8 @@ Slurm 使用四個步驟管理 CPU 資源：(1) 選擇節點、(2) 從節點分�
 透過使用者指令進行的 CPU 管理受限於 Slurm 管理員選擇的設定參數。不同 CPU 管理選項之間的互動複雜且通常難以預測。可能需要一些實驗才能找到產生預期結果的確切選項組合。
 
 相關文件：
-- [Slurm 可消耗資源](cons_tres.html)
-- [共享可消耗資源](cons_tres_share.html)
+- [Slurm 可消耗資源](cons_tres.md)
+- [共享可消耗資源](cons_tres_share.md)
 - [多核心/多執行緒架構支援](mc_support.md)
 - [平面分佈](dist_plane.html)
 

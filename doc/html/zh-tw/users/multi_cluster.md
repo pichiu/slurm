@@ -44,7 +44,7 @@ JOBID PARTITION   NAME   USER  ST   TIME NODES BP_LIST(REASON)
 
 設定完成後，指定 `-M, --clusters=` 選項的 Slurm 命令將對 `sacctmgr show clusters` 命令列出的所有叢集生效。
 
-另請參閱 [Slurm 聯邦排程指南](federation.html)。
+另請參閱 [Slurm 聯邦排程指南](federation.md)。
 
 ---
 

@@ -96,7 +96,7 @@ scontrol delete nodename=<nodelist>
 
 ### 拓撲
 
-節點可以動態新增到拓撲和從拓撲中移除，詳見[拓撲指南](topology.html)。
+節點可以動態新增到拓撲和從拓撲中移除，詳見[拓撲指南](topology.md)。
 
 ---
 
@@ -331,6 +331,6 @@ slurmd -Z --conf "RealMemory=80000 Feature=cloud,large"
 ### 相關文件
 
 - [節能指南](power_save.md) - 節點電源管理
-- [拓撲](topology.html) - 網路拓撲設定
+- [拓撲](topology.md) - 網路拓撲設定
 - [slurm.conf](slurm.conf.html) - 主要設定檔
 - [slurmd](slurmd.html) - slurmd 選項

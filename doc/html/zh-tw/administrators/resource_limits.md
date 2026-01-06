@@ -13,7 +13,7 @@
 
 ### 概述
 
-強烈建議在使用本文件之前熟悉 Slurm 的[會計](accounting.html)網頁。
+強烈建議在使用本文件之前熟悉 Slurm 的[會計](accounting.md)網頁。
 
 ### 階層
 
@@ -107,7 +107,7 @@ Slurm 的階層限制按以下順序強制執行，其中作業 QOS 和分割區
 
 **QOS** - 關聯能夠執行的 QOS 的逗號分隔列表。
 
-**注意**：使用 *sacctmgr* 修改 TRES 欄位時，必須指定要修改的 TRES（完整列表請參見 [TRES](tres.html)），如以下範例所示：
+**注意**：使用 *sacctmgr* 修改 TRES 欄位時，必須指定要修改的 TRES（完整列表請參見 [TRES](tres.md)），如以下範例所示：
 
 ```bash
 # 設定：
@@ -185,7 +185,7 @@ sacctmgr modify user bob set GrpTRES=cpu=-1,mem=-1,gres/gpu=-1
 
 當為用作分割區 QOS 的 QOS 分配限制時，請記住這些限制是在 QOS 級別強制執行的，而不是針對每個分割區單獨執行。例如，如果 QOS 定義了 **GrpTRES=cpu=20** 限制並且 QOS 被分配給兩個獨特的分割區，使用者將被限制為 QOS 的 20 個 CPU，而不是每個分割區 20 個 CPU。
 
-公平份額排程基於 Slurm 資料庫中維護的階層帳號資料。更多資訊可以在 [priority/multifactor](priority_multifactor.html) 外掛程式描述中找到。
+公平份額排程基於 Slurm 資料庫中維護的階層帳號資料。更多資訊可以在 [priority/multifactor](priority_multifactor.md) 外掛程式描述中找到。
 
 ### GRES 的特定限制
 
@@ -231,11 +231,11 @@ end
 AccountingStorageTRES=gres/gpu,gres/gpu:tesla
 ```
 
-詳見[可追蹤資源 TRES](tres.html)。
+詳見[可追蹤資源 TRES](tres.md)。
 
 ### 作業原因代碼
 
-當排程器評估待處理作業但發現超過配置的資源限制時，將為作業分配相應的原因。更多詳細資訊可以在[作業原因代碼](job_reason_codes.html)頁面找到。有關排程的更多詳細資訊可以在[排程配置指南](sched_config.html)中找到。
+當排程器評估待處理作業但發現超過配置的資源限制時，將為作業分配相應的原因。更多詳細資訊可以在[作業原因代碼](job_reason_codes.md)頁面找到。有關排程的更多詳細資訊可以在[排程配置指南](sched_config.md)中找到。
 
 ---
 

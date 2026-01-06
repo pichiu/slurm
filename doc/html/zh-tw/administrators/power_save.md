@@ -387,6 +387,6 @@ PartitionName=cloud Nodes=cloud[0-49] SuspendTime=300 PowerDownOnIdle=YES
 
 ### 相關文件
 
-- [動態節點](dynamic_nodes.html)
-- [拓撲](topology.html)
+- [動態節點](dynamic_nodes.md)
+- [拓撲](topology.md)
 - [聯邦排程](federation.md)

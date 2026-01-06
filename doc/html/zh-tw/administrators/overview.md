@@ -19,13 +19,13 @@ Slurm 是一個開源、容錯且高度可擴展的叢集管理（cluster manage
 3. **資源仲裁**：透過管理待處理工作的佇列來仲裁資源競爭
 
 可選的外掛程式（plugins）可用於：
-- [帳務管理](accounting.html)
-- [進階預約](reservations.html)
-- [分時排程](gang_scheduling.html)（用於平行作業的時間共享）
+- [帳務管理](accounting.md)
+- [進階預約](reservations.md)
+- [分時排程](gang_scheduling.md)（用於平行作業的時間共享）
 - 回填排程（backfill scheduling）
-- [拓撲最佳化資源選擇](topology.html)
-- [資源限制](resource_limits.html)（依使用者或帳戶）
-- 複雜的[多因子作業優先權](priority_multifactor.html)演算法
+- [拓撲最佳化資源選擇](topology.md)
+- [資源限制](resource_limits.md)（依使用者或帳戶）
+- 複雜的[多因子作業優先權](priority_multifactor.md)演算法
 
 ### 架構
 
@@ -33,7 +33,7 @@ Slurm 有一個集中式管理器 **slurmctld**，用於監控資源和工作。
 
 還有一個可選的 **slurmdbd**（Slurm 資料庫常駐程式），可用於在單一資料庫中記錄多個 Slurm 管理叢集的帳務資訊。
 
-還有一個可選的 **[slurmrestd](rest.html)**（Slurm REST API 常駐程式），可用於透過 [REST API](https://en.wikipedia.org/wiki/Representational_state_transfer) 與 Slurm 互動。
+還有一個可選的 **[slurmrestd](rest.md)**（Slurm REST API 常駐程式），可用於透過 [REST API](https://en.wikipedia.org/wiki/Representational_state_transfer) 與 Slurm 互動。
 
 **使用者工具包括：**
 - **srun**：啟動作業
@@ -59,15 +59,15 @@ Slurm 有一個通用的外掛機制，可輕鬆支援各種基礎設施。這�
 | **帳務儲存（Accounting Storage）** | 主要用於儲存作業的歷史資料。與 SlurmDBD 一起使用時，還可以提供基於限制的系統和歷史系統狀態 |
 | **帳戶能源收集（Account Gather Energy）** | 收集每個作業或系統節點的能源消耗資料。此外掛與帳務儲存和作業帳戶收集外掛整合 |
 | **通訊認證（Authentication）** | 提供 Slurm 各元件之間的認證機制 |
-| **[容器](containers.html)（Containers）** | HPC 工作負載容器支援和實作 |
+| **[容器](containers.md)（Containers）** | HPC 工作負載容器支援和實作 |
 | **憑證（Credential）** | 用於產生數位簽章的機制，用於驗證作業步驟是否被授權在特定節點上執行 |
-| **[通用資源](gres.html)（Generic Resources）** | 提供控制通用資源（包括 GPU）的介面 |
+| **[通用資源](gres.md)（Generic Resources）** | 提供控制通用資源（包括 GPU）的介面 |
 | **[作業提交](job_submit_plugins.html)（Job Submit）** | 允許站點特定控制提交和更新時的作業需求 |
 | **作業帳務收集（Job Accounting Gather）** | 收集作業步驟資源使用資料 |
 | **作業完成記錄（Job Completion Logging）** | 記錄作業的終止資料 |
 | **啟動器（Launchers）** | 控制 srun 指令啟動任務的機制 |
 | **MPI** | 為各種 MPI 實作提供不同的鉤子，例如設定 MPI 特定的環境變數 |
-| **[搶佔](preempt.html)（Preempt）** | 決定哪些作業可以搶佔其他作業以及要使用的搶佔機制 |
+| **[搶佔](preempt.md)（Preempt）** | 決定哪些作業可以搶佔其他作業以及要使用的搶佔機制 |
 | **優先權（Priority）** | 在提交時和持續基礎上（例如隨著作業老化）為作業分配優先權 |
 | **程序追蹤（Process tracking）** | 提供識別與每個作業相關程序的機制，用於作業帳務和訊號傳遞 |
 | **排程器（Scheduler）** | 決定 Slurm 如何以及何時排程作業 |

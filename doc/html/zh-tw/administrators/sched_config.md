@@ -55,7 +55,7 @@ Slurm 設計為在作業提交、完成和設定變更等事件時執行快速�
 2. 然後以優先順序考慮等待中的作業，決定每個作業何時何地可以開始
 3. 考慮因素包括：
    - [作業搶佔](preempt.md)
-   - [Gang 排程](gang_scheduling.html)
+   - [Gang 排程](gang_scheduling.md)
    - [通用資源 (GRES) 需求](gres.md)
    - 記憶體需求等
 4. 如果正在考慮的作業可以立即開始而不影響任何較高優先順序作業的預期開始時間，則啟動它
@@ -280,5 +280,5 @@ SchedulerParameters+=bf_window=1440
 
 - [slurm.conf](slurm.conf.html) - 主要設定檔
 - [搶佔](preempt.md) - 作業搶佔設定
-- [Gang 排程](gang_scheduling.html) - Gang 排程設定
+- [Gang 排程](gang_scheduling.md) - Gang 排程設定
 - [多因子優先順序](priority_multifactor.md) - 優先順序設定

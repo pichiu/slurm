@@ -14,7 +14,7 @@ Slurm 系統中的每個作業都會被指派一個狀態。作業狀態的顯�
 
 #### 概觀
 
-在 Slurm 程式碼中，有**基本狀態**和**狀態旗標**兩種類型。每個作業都有一個基本狀態，並可能設置額外的狀態旗標。使用 [REST API](rest_quickstart.html) 時，會同時回傳基本狀態和目前的旗標。
+在 Slurm 程式碼中，有**基本狀態**和**狀態旗標**兩種類型。每個作業都有一個基本狀態，並可能設置額外的狀態旗標。使用 [REST API](rest_quickstart.md) 時，會同時回傳基本狀態和目前的旗標。
 
 當 [squeue](squeue.html) 和 [sacct](sacct.html) 指令報告作業狀態時，它們會以單一狀態來表示。兩者都能識別所有基本狀態，但並非所有狀態旗標都能識別。如果存在可識別的旗標，將會報告該旗標而非基本狀態。詳細資訊請參閱相關指令文件。
 
@@ -49,21 +49,21 @@ Slurm 系統中的每個作業都會被指派一個狀態。作業狀態的顯�
 
 | 名稱 | 說明 |
 |------|------|
-| `COMPLETING` | 作業已完成或已取消，正在執行清理任務，包括 [epilog](prolog_epilog.html) 腳本（如果存在） |
+| `COMPLETING` | 作業已完成或已取消，正在執行清理任務，包括 [epilog](prolog_epilog.md) 腳本（如果存在） |
 | `CONFIGURING` | 作業已分配節點，正在等待節點開機或重新開機 |
 | `EXPEDITING` | 作業立即具有最高優先順序的排程資格 |
-| `LAUNCH_FAILED` | 在選定的節點上啟動失敗；包括 [prolog](prolog_epilog.html) 失敗和其他失敗條件 |
+| `LAUNCH_FAILED` | 在選定的節點上啟動失敗；包括 [prolog](prolog_epilog.md) 失敗和其他失敗條件 |
 | `POWER_UP_NODE` | 作業已分配到關機狀態的節點，正在等待節點開機 |
 | `RECONFIG_FAIL` | 作業的節點設定失敗 |
 | `REQUEUED` | 作業正在重新排入佇列，例如因[搶佔](../administrators/preempt.md)或授權使用者的[直接請求](scontrol.html#OPT_requeue) |
-| `REQUEUE_FED` | 因[聯邦](federation.html)設定中兄弟作業的條件而重新排入佇列 |
+| `REQUEUE_FED` | 因[聯邦](federation.md)設定中兄弟作業的條件而重新排入佇列 |
 | `REQUEUE_HOLD` | 與 `REQUEUED` 相同，但在被[釋放](scontrol.html#OPT_release)之前不會被考慮排程 |
 | `RESIZING` | 作業的大小正在改變；防止發生衝突的作業變更 |
 | `RESV_DEL_HOLD` | 因預約被刪除而保留 |
-| `REVOKED` | 因[聯邦](federation.html)設定中兄弟作業的條件而被撤銷 |
+| `REVOKED` | 因[聯邦](federation.md)設定中兄弟作業的條件而被撤銷 |
 | `SIGNALING` | 正在等待向作業發送信號 |
 | `SPECIAL_EXIT` | 與 `REQUEUE_HOLD` 相同，但用於識別適用於此作業的[特殊情況](scontrol.html#OPT_State) |
-| `STAGE_OUT` | 正在輸出資料（[burst buffer](burst_buffer.html)） |
+| `STAGE_OUT` | 正在輸出資料（[burst buffer](burst_buffer.md)） |
 | `STOPPED` | 收到 SIGSTOP 信號以暫停作業而不釋放資源 |
 | `UPDATE_DB` | 正在將作業更新資訊發送到資料庫 |
 

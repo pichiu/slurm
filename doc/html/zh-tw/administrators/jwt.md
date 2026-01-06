@@ -447,6 +447,6 @@ chown slurm:slurm /path/to/jwt.key
 ### 相關文件
 
 - [認證外掛程式](authentication.md) - 認證概觀
-- [REST API](rest_quickstart.html) - REST API 使用
+- [REST API](rest_quickstart.md) - REST API 使用
 - [slurm.conf](slurm.conf.html) - 主要設定檔
 - [libjwt 安裝](related_software.html#jwt) - 函式庫安裝
