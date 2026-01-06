@@ -1,6 +1,6 @@
 # Slurm 工作負載管理器 - 文件索引
 
-> 產生日期：2025-12-17 | 掃描等級：完整掃描 | 版本：26.05.0-0rc1
+> 產生日期：2025-12-17 | 最後更新：2026-01-06 | 版本：26.05.0-0rc1
 
 本文件集為 Slurm 工作負載管理器程式碼庫的 AI 輔助開發而產生，提供針對 LLM 上下文效率最佳化的完整參考資料。
 
@@ -11,11 +11,45 @@
 | 我想要... | 前往 |
 |-----------|------|
 | 了解 Slurm 是什麼 | [專案概覽](./project-overview.md) |
-| 學習系統架構 | [架構文件](./architecture.md) |
-| 從原始碼建置 | [開發指南](./development-guide.md) |
-| 瀏覽原始碼結構 | [原始碼樹狀分析](./source-tree-analysis.md) |
-| 使用 REST API | [API 契約](./api-contracts.md) |
-| 了解資料結構 | [資料模型](./data-models.md) |
+| 學習系統架構 | [架構文件](./architecture/architecture.md) |
+| 瀏覽原始碼結構 | [原始碼樹狀分析](./architecture/source-tree-analysis.md) |
+| 使用 REST API | [API 契約](./architecture/api-contracts.md) |
+| 了解資料結構 | [資料模型](./architecture/data-models.md) |
+| 配置 Partition | [Partition 指南](./technical-reference/configuration/slurm-partition-guide.md) |
+| 配置 slurm.conf | [slurm.conf 說明](./technical-reference/configuration/slurm-conf.md) |
+
+---
+
+## 文件結構
+
+```
+_bmad-output/
+├── index.md                    # 本文件 - 主索引
+├── project-overview.md         # 專案概覽
+│
+├── architecture/               # 架構相關
+│   ├── architecture.md         # 整體架構
+│   ├── data-models.md          # 資料模型
+│   ├── api-contracts.md        # API 契約
+│   └── source-tree-analysis.md # 原始碼結構
+│
+├── guides/                     # 使用指南
+│   ├── user-guide.md           # 使用者指南
+│   ├── admin-guide.md          # 管理員指南
+│   └── developer-guide.md      # 開發者指南
+│
+└── technical-reference/        # 深度技術參考
+    ├── configuration/          # 配置相關
+    │   ├── slurm-conf.md       # slurm.conf 完整說明
+    │   └── slurm-partition-guide.md  # Partition 配置指南
+    │
+    ├── authentication/         # 認證相關
+    │   ├── slurm-auth-munge.md # 認證機制分析
+    │   └── slurm-ldap-integration.md # LDAP 整合
+    │
+    └── internals/              # 內部實作
+        └── scontrol-and-restapi-deep-dive.md
+```
 
 ---
 
@@ -23,26 +57,48 @@
 
 | 文件 | 說明 | 適用對象 |
 |------|------|----------|
-| [使用者指南](./user-guide.md) | 作業提交、監控、資源查詢 | 一般使用者 |
-| [管理員指南](./admin-guide.md) | 叢集配置、節點管理、帳戶管理 | 系統管理員 |
-| [開發者指南](./developer-guide.md) | 建置、外掛開發、貢獻程式碼 | 開發人員 |
+| [使用者指南](./guides/user-guide.md) | 作業提交、監控、資源查詢 | 一般使用者 |
+| [管理員指南](./guides/admin-guide.md) | 叢集配置、節點管理、帳戶管理 | 系統管理員 |
+| [開發者指南](./guides/developer-guide.md) | 建置、外掛開發、貢獻程式碼 | 開發人員 |
 
 ---
 
-## 產生的文件
+## 架構文件
 
-### 核心文件
+| 文件 | 說明 |
+|------|------|
+| [架構文件](./architecture/architecture.md) | 系統設計、守護程式、外掛、通訊協定 |
+| [原始碼樹狀分析](./architecture/source-tree-analysis.md) | 目錄結構、關鍵檔案、統計資料 |
+| [API 契約](./architecture/api-contracts.md) | slurmctld 與 slurmdbd 的 REST API 端點 |
+| [資料模型](./architecture/data-models.md) | 核心資料結構與資料庫綱要 |
 
-| 文件 | 說明 | 狀態 |
-|------|------|------|
-| [專案概覽](./project-overview.md) | 快速參考、功能說明、入門指引 | 完成 |
-| [架構文件](./architecture.md) | 系統設計、守護程式、外掛、通訊協定 | 完成 |
-| [原始碼樹狀分析](./source-tree-analysis.md) | 目錄結構、關鍵檔案、統計資料 | 完成 |
-| [開發指南](./development-guide.md) | 建置說明、程式碼風格、測試 | 完成 |
-| [API 契約](./api-contracts.md) | slurmctld 與 slurmdbd 的 REST API 端點 | 完成 |
-| [資料模型](./data-models.md) | 核心資料結構與資料庫綱要 | 完成 |
+---
 
-### 狀態檔案
+## 深度技術參考
+
+### 配置相關
+
+| 文件 | 說明 |
+|------|------|
+| [slurm.conf 完整說明](./technical-reference/configuration/slurm-conf.md) | 主配置檔所有參數詳解 |
+| [Partition 配置指南](./technical-reference/configuration/slurm-partition-guide.md) | Partition 資料結構、配置參數與實務範例 |
+
+### 認證相關
+
+| 文件 | 說明 |
+|------|------|
+| [認證機制分析](./technical-reference/authentication/slurm-auth-munge.md) | auth/munge 與 auth/slurm 深入分析 |
+| [LDAP 整合](./technical-reference/authentication/slurm-ldap-integration.md) | Slurm 與 LDAP 整合方式 |
+
+### 內部實作
+
+| 文件 | 說明 |
+|------|------|
+| [scontrol 與 REST API](./technical-reference/internals/scontrol-and-restapi-deep-dive.md) | scontrol CLI 與 slurmrestd 架構分析 |
+
+---
+
+## 狀態檔案
 
 | 檔案 | 用途 |
 |------|------|
@@ -79,9 +135,9 @@
 
 | 角色 | 本地指南 | 官方文件數量 |
 |------|----------|--------------|
-| 使用者 | [使用者指南](./user-guide.md#官方文件參考) | 14+ 篇文件 |
-| 管理員 | [管理員指南](./admin-guide.md#官方文件參考) | 40+ 篇文件 |
-| 開發者 | [開發者指南](./developer-guide.md#官方文件參考) | 12+ 篇文件 |
+| 使用者 | [使用者指南](./guides/user-guide.md#官方文件參考) | 14+ 篇文件 |
+| 管理員 | [管理員指南](./guides/admin-guide.md#官方文件參考) | 40+ 篇文件 |
+| 開發者 | [開發者指南](./guides/developer-guide.md#官方文件參考) | 12+ 篇文件 |
 
 ---
 
@@ -134,12 +190,12 @@
 
 ```
 使用者 --> CLI 工具/REST API --> slurmctld（控制器）
-                                       |
-                                 slurmd（節點）
-                                       |
-                               slurmstepd（任務）
-                                       |
-                                 slurmdbd --> MySQL
+                                      |
+                                slurmd（節點）
+                                      |
+                              slurmstepd（任務）
+                                      |
+                                slurmdbd --> MySQL
 ```
 
 ### 核心元件
@@ -233,6 +289,8 @@ cd testsuite/python && pytest
 
 | 日期 | 動作 | 備註 |
 |------|------|------|
+| 2026-01-06 | 目錄結構重整 | 新增分類目錄、新增 Partition 配置指南 |
+| 2025-12-31 | 新增深度技術文件 | 認證機制、LDAP 整合、scontrol/REST API |
 | 2025-12-17 | 初始產生 | 完整掃描完成 |
 
 ---
@@ -246,14 +304,17 @@ cd testsuite/python && pytest
 3. **原始碼樹狀分析** - 快速找到相關檔案
 4. **資料模型** - 編寫程式碼前了解核心結構
 5. **API 契約** - REST API 工作的參考
-6. **開發指南** - 遵循程式碼規範
+6. **開發者指南** - 遵循程式碼規範
+7. **技術參考** - 深入了解特定主題
 
 ### 常見任務
 
 | 任務 | 建議閱讀 |
 |------|----------|
-| 新增 CLI 選項 | 開發指南 > 常見開發任務 |
-| 新增 RPC | 架構文件 > 通訊協定、開發指南 |
-| 建立新外掛 | 架構文件 > 外掛架構、開發指南 |
-| 修改作業處理 | 資料模型 > job_record_t、原始碼樹狀 > slurmctld |
-| 使用 REST API | API 契約、原始碼樹狀 > slurmrestd |
+| 新增 CLI 選項 | [開發者指南](./guides/developer-guide.md) > 常見開發任務 |
+| 新增 RPC | [架構文件](./architecture/architecture.md) > 通訊協定 |
+| 建立新外掛 | [架構文件](./architecture/architecture.md) > 外掛架構 |
+| 修改作業處理 | [資料模型](./architecture/data-models.md) > job_record_t |
+| 使用 REST API | [API 契約](./architecture/api-contracts.md) |
+| 配置 Partition | [Partition 指南](./technical-reference/configuration/slurm-partition-guide.md) |
+| 配置認證 | [認證機制](./technical-reference/authentication/slurm-auth-munge.md) |
