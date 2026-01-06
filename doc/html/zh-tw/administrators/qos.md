@@ -32,7 +32,7 @@
 
 #### 排程優先級
 
-作業排程優先級由多個因素組成，如 [priority/multifactor](priority_multifactor.md) 外掛程式中所述。其中一個因素是 QOS 優先級。每個 QOS 在 Slurm 資料庫中定義，並包含一個關聯的優先級。請求並被允許使用 QOS 的作業將在作業的[多因素優先級計算](priority_multifactor.html#general)中納入與該 QOS 關聯的優先級。
+作業排程優先級由多個因素組成，如 [priority/multifactor](priority_multifactor.md) 外掛程式中所述。其中一個因素是 QOS 優先級。每個 QOS 在 Slurm 資料庫中定義，並包含一個關聯的優先級。請求並被允許使用 QOS 的作業將在作業的[多因素優先級計算](priority_multifactor.md#general)中納入與該 QOS 關聯的優先級。
 
 要啟用多因素優先級計算中的 QOS 優先級組件，必須在 slurm.conf 檔案中定義「PriorityWeightQOS」配置參數並賦予大於零的整數值。
 

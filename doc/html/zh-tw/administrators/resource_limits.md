@@ -133,11 +133,11 @@ sacctmgr modify user bob set GrpTRES=cpu=-1,mem=-1,gres/gpu=-1
 
 **GrpTRES** - 從一個 QOS 執行的作業在任何給定時間能夠使用的 TRES 總數。如果達到此限制，新作業將排隊，但只有在此群組的資源被釋放後才允許執行。
 
-**GrpTRESMins** - 從一個 QOS 執行的過去、現在和未來作業可能使用的 TRES 分鐘總數。如果達到任何限制，此群組中所有使用該 TRES 的執行中作業將被終止，且不允許執行新作業。此使用量會衰減（以 PriorityDecayHalfLife 的速率）。它也可以被重設（根據 PriorityUsageResetPeriod）以允許作業再次針對 QOS 執行。設定了 NoDecay 旗標的 QOS 不會衰減 GrpTRESMins，詳見 [QOS 選項](qos.html#qos_other)。此限制僅在使用優先級多因素外掛程式時適用。
+**GrpTRESMins** - 從一個 QOS 執行的過去、現在和未來作業可能使用的 TRES 分鐘總數。如果達到任何限制，此群組中所有使用該 TRES 的執行中作業將被終止，且不允許執行新作業。此使用量會衰減（以 PriorityDecayHalfLife 的速率）。它也可以被重設（根據 PriorityUsageResetPeriod）以允許作業再次針對 QOS 執行。設定了 NoDecay 旗標的 QOS 不會衰減 GrpTRESMins，詳見 [QOS 選項](qos.md#qos_other)。此限制僅在使用優先級多因素外掛程式時適用。
 
 **GrpTRESRunMins** - 用於限制與一個 QOS 一起執行的所有作業使用的 TRES 分鐘的組合總數。這會考慮執行中作業的時間限制並消耗它。如果達到限制，在其他作業完成以釋放時間之前，不會啟動新作業。
 
-**GrpWall** - 為一個 QOS 聚合分配的執行中作業的最大牆鐘時間。如果達到此限制，此 QOS 中的未來作業將排隊，直到它們能夠在限制內執行。此使用量會衰減（以 PriorityDecayHalfLife 的速率）。它也可以被重設（根據 PriorityUsageResetPeriod）以允許作業再次針對 QOS 執行。設定了 NoDecay 旗標的 QOS 不會衰減 GrpWall。詳見 [QOS 選項](qos.html#qos_other)。
+**GrpWall** - 為一個 QOS 聚合分配的執行中作業的最大牆鐘時間。如果達到此限制，此 QOS 中的未來作業將排隊，直到它們能夠在限制內執行。此使用量會衰減（以 PriorityDecayHalfLife 的速率）。它也可以被重設（根據 PriorityUsageResetPeriod）以允許作業再次針對 QOS 執行。設定了 NoDecay 旗標的 QOS 不會衰減 GrpWall。詳見 [QOS 選項](qos.md#qos_other)。
 
 **LimitFactor** - 一個會計入關聯的 [Grp|Max]TRES 限制的浮點數。例如，如果 LimitFactor 是 2，則 GrpTRES 為 30 CPU 的關聯在此 QOS 下執行時將被允許分配 60 CPU。**注意**：此因子僅適用於在此 QOS 中執行的關聯，不適用於 QOS 本身的任何限制。
 
