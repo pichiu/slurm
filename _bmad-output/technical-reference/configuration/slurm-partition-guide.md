@@ -548,3 +548,59 @@ scontrol update PartitionName=<name> <參數>=<值>
 # 重新載入 slurm.conf
 scontrol reconfigure
 ```
+
+---
+
+## 延伸閱讀
+
+以下繁體中文文件提供 Partition 相關參數的深入說明：
+
+### 排程與優先級
+
+| 文件 | 說明 | 相關參數 |
+|------|------|----------|
+| [多因子優先權](../../../doc/html/zh-tw/administrators/priority_multifactor.md) | 作業優先權計算機制 | `PriorityTier`, `PriorityJobFactor` |
+| [作業搶占](../../../doc/html/zh-tw/administrators/preempt.md) | 搶占模式與配置 | `PreemptMode`, `GraceTime`, `PriorityTier` |
+| [Gang 排程](../../../doc/html/zh-tw/administrators/gang_scheduling.md) | 時間分片排程 | `OverSubscribe`, `PreemptMode=GANG` |
+| [排程配置](../../../doc/html/zh-tw/administrators/sched_config.md) | 排程器參數說明 | 排程相關設定 |
+
+### 存取控制
+
+| 文件 | 說明 | 相關參數 |
+|------|------|----------|
+| [服務品質 (QOS)](../../../doc/html/zh-tw/administrators/qos.md) | QOS 定義與管理 | `AllowQos`, `DenyQos`, `QOS` |
+| [資源預約](../../../doc/html/zh-tw/administrators/reservations.md) | 預約機制說明 | `ReqResv` |
+| [資源限制](../../../doc/html/zh-tw/administrators/resource_limits.md) | 帳號與使用者限制 | 資源限制參數 |
+
+### 資源管理
+
+| 文件 | 說明 | 相關參數 |
+|------|------|----------|
+| [可消耗資源](../../../doc/html/zh-tw/administrators/cons_tres.md) | CPU/記憶體追蹤 | `SelectTypeParameters` |
+| [資源共享](../../../doc/html/zh-tw/administrators/cons_tres_share.md) | 資源過度配置 | `OverSubscribe` |
+| [GRES 配置](../../../doc/html/zh-tw/administrators/gres.md) | GPU 等通用資源 | `DefCPUPerGPU`, `DefMemPerGPU` |
+| [TRES 說明](../../../doc/html/zh-tw/administrators/tres.md) | 可追蹤資源 | `TRESBillingWeights` |
+
+### 電源管理
+
+| 文件 | 說明 | 相關參數 |
+|------|------|----------|
+| [節能指南](../../../doc/html/zh-tw/administrators/power_save.md) | 節點掛起與恢復 | `PowerDownOnIdle`, `SuspendTime`, `SuspendTimeout`, `ResumeTimeout` |
+
+### 進階主題
+
+| 文件 | 說明 | 相關參數 |
+|------|------|----------|
+| [拓撲配置](../../../doc/html/zh-tw/administrators/topology.md) | 網路拓撲 | `Topology` |
+| [動態節點](../../../doc/html/zh-tw/administrators/dynamic_nodes.md) | 動態新增節點 | `Nodes` |
+| [大型系統](../../../doc/html/zh-tw/administrators/big_sys.md) | 大規模叢集最佳化 | 效能調校 |
+| [高吞吐量](../../../doc/html/zh-tw/administrators/high_throughput.md) | 大量作業處理 | 排程最佳化 |
+
+### 使用者指南
+
+| 文件 | 說明 |
+|------|------|
+| [快速入門](../../../doc/html/zh-tw/users/quickstart.md) | 使用者基本操作 |
+| [CPU 管理](../../../doc/html/zh-tw/users/cpu_management.md) | CPU 綁定與分配 |
+| [資源綁定](../../../doc/html/zh-tw/users/resource_binding.md) | 資源綁定選項 |
+| [作業原因碼](../../../doc/html/zh-tw/users/job_reason_codes.md) | 作業等待原因說明 |
