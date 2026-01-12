@@ -560,6 +560,7 @@ scontrol reconfigure
 | 文件 | 說明 |
 |------|------|
 | [scontrol create partition 內部實現](../internals/scontrol-create-partition-flow.md) | 原始碼級別的 Partition 建立流程分析，包含 RPC 機制、函數調用鏈與觸發元件 |
+| [scontrol reconfigure 內部實現](../internals/scontrol-reconfigure-flow.md) | 配置重載的 Fork + Execve 機制、read_slurm_conf() 流程與不可變更配置項 |
 
 ### 排程與優先級
 
