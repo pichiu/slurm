@@ -215,7 +215,7 @@ flowchart TD
         L1[CONFIG_LOCK<br/>配置鎖]
         L2[JOB_LOCK<br/>作業鎖]
         L3[NODE_LOCK<br/>節點鎖]
-        L4[PART_LOCK<br/>分區鎖]
+        L4[PART_LOCK<br/>partition 鎖]
         L5[FED_LOCK<br/>聯邦鎖]
     end
 
@@ -241,7 +241,7 @@ slurmctld_lock_t part_write_lock = {
     READ_LOCK,   /* 配置鎖：讀取 */
     WRITE_LOCK,  /* 作業鎖：寫入（Gang Scheduler 支援需要） */
     WRITE_LOCK,  /* 節點鎖：寫入 */
-    WRITE_LOCK,  /* 分區鎖：寫入 */
+    WRITE_LOCK,  /* partition 鎖：寫入 */
     NO_LOCK      /* 聯邦鎖：不需要 */
 };
 
@@ -646,7 +646,7 @@ static void _slurm_rpc_update_partition(slurm_msg_t *msg)
         READ_LOCK,   /* 配置：讀取 */
         WRITE_LOCK,  /* 作業：寫入（Gang Scheduler） */
         WRITE_LOCK,  /* 節點：寫入 */
-        WRITE_LOCK,  /* 分區：寫入 */
+        WRITE_LOCK,  /* partition：寫入 */
         NO_LOCK      /* 聯邦：不需要 */
     };
 
