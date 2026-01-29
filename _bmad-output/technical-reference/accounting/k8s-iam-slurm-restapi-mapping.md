@@ -23,7 +23,8 @@ version: 1.0.0
 7. [限制的層級繼承機制](#限制的層級繼承機制)
 8. [實戰：K8s IAM 映射與凍結控制](#實戰k8s-iam-映射與凍結控制)
 9. [查詢與驗證](#查詢與驗證)
-10. [前提配置與注意事項](#前提配置與注意事項)
+10. [強制執行機制：AccountingStorageEnforce 深入解析](#強制執行機制accountingstorageenforce-深入解析)
+11. [前提配置與注意事項](#前提配置與注意事項)
 
 ---
 
@@ -1067,23 +1068,153 @@ for assoc in data.get('associations', []):
 
 ---
 
+## 強制執行機制：AccountingStorageEnforce 深入解析
+
+透過 REST API 設定的所有 Association 限制（`GrpJobs`、`GrpSubmitJobs`、`GrpTRES` 等），**必須**搭配 `slurm.conf` 中的 `AccountingStorageEnforce` 設定才會真正生效。這是整個凍結機制能否運作的**決定性開關**。
+
+### 為什麼限制可能不生效？
+
+當 `slurmctld`（控制器）收到 job 提交請求時，會檢查 `AccountingStorageEnforce` 旗標。以下是原始碼中的關鍵判斷邏輯（`src/slurmctld/acct_policy.c`）：
+
+```c
+if (!(accounting_enforce & ACCOUNTING_ENFORCE_LIMITS)
+    || !_valid_job_assoc(job_ptr))
+    return;
+```
+
+- `accounting_enforce` 來自 `slurm.conf` 的 `AccountingStorageEnforce` 設定
+- 若不包含 `limits` 旗標，函式**直接返回**，完全跳過所有限制檢查
+- 結果：即使資料庫中 `GrpJobs=0`，job 仍會被接受並執行
+
+### 從 API 呼叫到 Job 提交的完整決策流程
+
+```mermaid
+sequenceDiagram
+    participant Admin as 管理員 (API Client)
+    participant REST as slurmrestd
+    participant DB as SlurmDBD (Database)
+    participant User as 使用者 (sbatch)
+    participant Ctl as slurmctld (Controller)
+    participant Conf as slurm.conf
+
+    Note over Admin, DB: 階段 1：設定限制 (API)
+    Admin->>REST: POST /associations (user="", GrpJobs=0)
+    REST->>DB: Update Account Association
+    DB-->>REST: Success
+    REST-->>Admin: 200 OK
+    Note right of DB: DB 中 project-alpha 的 GrpJobs 現為 0
+
+    Note over User, Conf: 階段 2：提交作業 (強制執行檢查)
+    User->>Ctl: sbatch (account=project-alpha)
+    Ctl->>Conf: 讀取 AccountingStorageEnforce
+
+    alt AccountingStorageEnforce 包含 "limits"
+        Conf-->>Ctl: ENFORCE_LIMITS = True
+        Ctl->>DB: 查詢 project-alpha 限制
+        DB-->>Ctl: GrpJobs=0
+        Ctl->>Ctl: 檢查：0 (Limit) vs 1 (Request)
+        Ctl-->>User: 拒絕提交 (Job violates accounting policy)
+    else AccountingStorageEnforce 未設定或無 "limits"
+        Conf-->>Ctl: ENFORCE_LIMITS = False
+        Ctl->>Ctl: 跳過限制檢查（直接 return）
+        Ctl-->>User: 接受提交 (JobID: 12345)
+        Note right of Ctl: 限制形同虛設
+    end
+```
+
+### AccountingStorageEnforce 選項全解析
+
+`AccountingStorageEnforce` 是一個以逗號分隔的選項清單。各選項之間存在**隱含的依賴關係**——啟用較高層級的選項會自動開啟其依賴的較低層級選項。
+
+| 選項 | 隱含開啟 | 功能描述 |
+|------|---------|---------|
+| `associations` | 無 | 強制關聯性檢查。使用者提交 job 時，必須在 DB 中有對應的 Association（User + Account + Cluster + Partition 組合），否則拒絕提交 |
+| `limits` | `associations` | 強制執行 Association 和 QOS 上的所有資源限制（`GrpJobs`、`MaxTRES` 等）。**凍結功能必須啟用此選項** |
+| `safe` | `associations`, `limits` | 啟用預測模式。若 job **預計**會導致額度超標，則在啟動前就阻擋，避免跑到一半被 kill |
+| `qos` | `associations` | 強制執行 QOS 規則 |
+| `wckeys` | `associations` | 強制 WCKey（工作負載特性鍵）檢查 |
+| `nojobs` | `nosteps` | 不將 job 資訊寫入記帳 DB（僅用於測試） |
+| `nosteps` | 無 | 不將 job step 資訊寫入記帳 DB |
+| `all` | `associations`, `limits`, `safe`, `qos`, `wckeys` | 啟用所有強制執行選項（不含 `nojobs`、`nosteps`） |
+
+依賴關係視覺化：
+
+```text
+all
+ ├── safe
+ │    └── limits
+ │         └── associations
+ ├── qos
+ │    └── associations
+ └── wckeys
+      └── associations
+```
+
+### Safe 模式深入分析
+
+`safe` 模式在 `limits` 基礎上引入了**預測機制**。理解兩者的差異對於生產環境至關重要。
+
+#### 無 Safe 模式（僅 limits）
+
+- 檢查邏輯：`當前已用資源 < 限額`
+- 風險：job 開始時額度足夠，但執行中途另一個 job 完成後結算，導致 `當前用量 > 限額`，**正在跑的 job 被 kill**
+
+#### 有 Safe 模式
+
+- 檢查邏輯：`當前已用資源 + (該 job 預計時間 × 請求資源) < 限額`
+- 優勢：不足時 job 保持 PENDING 等待，**不會在執行中途被 kill**
+
+```mermaid
+flowchart TD
+    Submit["使用者提交 job"] --> CheckCurrent{"當前額度已滿？"}
+
+    CheckCurrent -->|"已滿"| Deny["拒絕 / PENDING"]
+    CheckCurrent -->|"未滿"| IsSafe{"是否設定 safe？"}
+
+    IsSafe -->|"否（僅 limits）"| RunJob["立即執行"]
+    RunJob --> LimitHit{"執行中途額度耗盡？"}
+    LimitHit -->|"是"| KillJob["Job 被強制 KILL<br/>浪費運算資源"]
+    LimitHit -->|"否"| Finish["Job 完成"]
+
+    IsSafe -->|"是（safe）"| Predict{"預測：<br/>當前 + 預計用量 > 限額？"}
+    Predict -->|"會超標"| PendJob["暫緩執行 PENDING<br/>等待額度"]
+    Predict -->|"不會超標"| SafeRun["安全執行"]
+    SafeRun --> FinishSafe["Job 順利完成"]
+
+    style KillJob fill:#f66,stroke:#333,stroke-width:2px
+    style SafeRun fill:#6f6,stroke:#333,stroke-width:2px
+    style PendJob fill:#ff6,stroke:#333,stroke-width:2px
+```
+
+#### 對凍結功能的影響
+
+| 場景 | 僅 `limits` | `safe` |
+|------|------------|--------|
+| `GrpJobs=0` 凍結效果 | 完全生效 | 完全生效 |
+| `GrpTRESMins` 用完 | job 跑到一半被 kill | job 不會被啟動，保持 PENDING |
+| `GrpWall` 接近上限 | job 可能跑到一半超時 | job 預測超標時就不啟動 |
+
+**建議**：生產環境使用 `safe` 模式，避免 job 被中途 kill 浪費資源。
+
+---
+
 ## 前提配置與注意事項
 
-### 必要的 slurm.conf 配置
+### 推薦的 slurm.conf 配置
 
 ```ini
 # 啟用記帳儲存
 AccountingStorageType=accounting_storage/slurmdbd
 
-# 強制執行 association 和 limits（缺少此設定則限制不生效）
-AccountingStorageEnforce=associations,limits
+# 推薦設定：包含 limits（凍結必要）和 safe（生產環境建議）
+AccountingStorageEnforce=associations,limits,safe,qos
 
 # slurmdbd 連線
 AccountingStorageHost=slurmdbd-host
 AccountingStoragePort=6819
 ```
 
-> `AccountingStorageEnforce` 必須包含 `limits`，否則 `GrpJobs`、`GrpSubmitJobs` 等限制**不會被強制執行**。這是最常見的配置遺漏。
+> **最低要求**：`AccountingStorageEnforce` 必須包含 `limits`。沒有此設定，所有 Association 限制（`GrpJobs`、`GrpSubmitJobs`、`GrpTRES` 等）**形同虛設**，即使 DB 中的值已經被 API 修改為 0。
 
 ### slurmrestd 啟動配置
 
@@ -1104,6 +1235,7 @@ slurmrestd -a rest_auth/jwt 0.0.0.0:6820
 | API 版本 | 每個 Slurm 大版本對應不同的 API 版本（v0.0.42/43/44/45） |
 | 批量操作 | 單一 POST 可包含多筆 association，適合大規模同步 |
 | 回應格式 | 所有 API 回傳統一的 `{ meta, errors, warnings, data }` 結構 |
+| Enforce 生效時機 | 修改 `slurm.conf` 後需執行 `scontrol reconfigure` 才會載入新設定 |
 
 ### API 回應結構
 
