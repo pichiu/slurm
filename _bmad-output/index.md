@@ -17,6 +17,7 @@
 | 了解資料結構 | [資料模型](./architecture/data-models.md) |
 | 配置 Partition | [Partition 指南](./technical-reference/configuration/slurm-partition-guide.md) |
 | 配置 slurm.conf | [slurm.conf 說明](./technical-reference/configuration/slurm-conf.md) |
+| K8s IAM 整合 Slurm | [K8s IAM 映射指南](./technical-reference/accounting/k8s-iam-slurm-restapi-mapping.md) |
 
 ---
 
@@ -39,6 +40,9 @@ _bmad-output/
 │   └── developer-guide.md      # 開發者指南
 │
 └── technical-reference/        # 深度技術參考
+    ├── accounting/             # 記帳與 IAM 整合
+    │   └── k8s-iam-slurm-restapi-mapping.md  # K8s IAM 映射指南
+    │
     ├── configuration/          # 配置相關
     │   ├── slurm-conf.md       # slurm.conf 完整說明
     │   └── slurm-partition-guide.md  # Partition 配置指南
@@ -48,7 +52,9 @@ _bmad-output/
     │   └── slurm-ldap-integration.md # LDAP 整合
     │
     └── internals/              # 內部實作
-        └── scontrol-and-restapi-deep-dive.md
+        ├── scontrol-and-restapi-deep-dive.md
+        ├── scontrol-create-partition-flow.md
+        └── scontrol-reconfigure-flow.md
 ```
 
 ---
@@ -75,6 +81,12 @@ _bmad-output/
 ---
 
 ## 深度技術參考
+
+### 記帳與 IAM 整合
+
+| 文件 | 說明 |
+|------|------|
+| [K8s IAM 映射指南](./technical-reference/accounting/k8s-iam-slurm-restapi-mapping.md) | K8s IAM 專案/帳號與 Slurm Account/User/Association 的 REST API 完整對應，含凍結控制 |
 
 ### 配置相關
 
@@ -289,6 +301,7 @@ cd testsuite/python && pytest
 
 | 日期 | 動作 | 備註 |
 |------|------|------|
+| 2026-01-29 | 新增 K8s IAM 映射指南 | 記帳系統 Account/User/Association REST API 完整對應 |
 | 2026-01-06 | 目錄結構重整 | 新增分類目錄、新增 Partition 配置指南 |
 | 2025-12-31 | 新增深度技術文件 | 認證機制、LDAP 整合、scontrol/REST API |
 | 2025-12-17 | 初始產生 | 完整掃描完成 |
@@ -316,5 +329,6 @@ cd testsuite/python && pytest
 | 建立新外掛 | [架構文件](./architecture/architecture.md) > 外掛架構 |
 | 修改作業處理 | [資料模型](./architecture/data-models.md) > job_record_t |
 | 使用 REST API | [API 契約](./architecture/api-contracts.md) |
+| K8s IAM 整合 Slurm | [K8s IAM 映射指南](./technical-reference/accounting/k8s-iam-slurm-restapi-mapping.md) |
 | 配置 Partition | [Partition 指南](./technical-reference/configuration/slurm-partition-guide.md) |
 | 配置認證 | [認證機制](./technical-reference/authentication/slurm-auth-munge.md) |
