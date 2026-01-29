@@ -471,11 +471,17 @@ def repeat_until(
         else:
             poll_interval = 1
 
+    logging.debug(
+        f"Waiting until condition related to {condition.__code__.co_varnames} is met, or timeout after {timeout}s..."
+    )
     condition_met = False
     while time.time() < begin_time + timeout:
-        if condition(callable()):
+        value = callable()
+        if condition(value):
+            logging.debug(f"Condition met, value: {value}")
             condition_met = True
             break
+        logging.debug(f"Condition not yet met, value: {value}")
         time.sleep(poll_interval)
 
     if not xfail and not condition_met:
@@ -559,12 +565,18 @@ def is_slurmrestd_running():
     """Checks if slurmrestd is running.
     Needs to be run after the related properties are set.
     """
+
+    def safe_request_openapi():
+        try:
+            return request_slurmrestd("openapi/v3")
+        except Exception as err:
+            logging.warn(err)
+            return None
+
     # TODO: We could check also if the required plugins/parsers in properties
     #       are in the returned specs, but the format still depends on the version.
     #       Once v0.0.39 is removed, we could add the extra check.
-    return repeat_until(
-        lambda: request_slurmrestd("openapi/v3"), lambda r: r.status_code == 200
-    )
+    return repeat_until(safe_request_openapi, lambda r: r and r.status_code == 200)
 
 
 def is_slurmctld_running(quiet=False):

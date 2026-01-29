@@ -824,6 +824,19 @@ extern resource_allocation_response_msg_t *build_alloc_msg(
 			alloc_msg->env_size =
 				PTR_ARRAY_SIZE(alloc_msg->environment) - 1;
 		}
+
+		if (job_ptr->job_resrcs && job_ptr->job_resrcs->cpu_array_cnt) {
+			char *task_count = get_tasks_per_node(job_ptr);
+			if (task_count) {
+				env_array_overwrite(&alloc_msg->environment,
+						    "SLURM_TASKS_PER_NODE",
+						    task_count);
+				xfree(task_count);
+				alloc_msg->env_size =
+					PTR_ARRAY_SIZE(alloc_msg->environment) -
+					1;
+			}
+		}
 	} else {
 		/* alloc_msg->pn_min_memory = 0; */
 		alloc_msg->ntasks_per_board  = NO_VAL16;
@@ -3029,11 +3042,12 @@ static void _slurm_rpc_job_sbcast_cred(slurm_msg_t *msg)
 						     &job_info_msg->step_id,
 						     msg->protocol_version,
 						     &job_info_resp_msg);
-	unlock_slurmctld(job_read_lock);
-	END_TIMER2(__func__);
 
 	if (error_code)
 		goto error;
+
+	unlock_slurmctld(job_read_lock);
+	END_TIMER2(__func__);
 
 	info("%s: %s NodeList=%s - %s",
 	     __func__,
@@ -3051,6 +3065,7 @@ static void _slurm_rpc_job_sbcast_cred(slurm_msg_t *msg)
 
 error:
 	unlock_slurmctld(job_read_lock);
+	END_TIMER2(__func__);
 
 	debug2("%s: JobId=%s, uid=%u: %s",
 	       __func__,
@@ -5932,7 +5947,6 @@ static int _process_persist_conn(void *arg, persist_msg_t *persist_msg,
 
 static void _slurm_rpc_persist_init(slurm_msg_t *msg)
 {
-	DEF_TIMERS;
 	int rc = SLURM_SUCCESS, fd = -1;
 	char *comment = NULL;
 	buf_t *ret_buf;
@@ -5942,8 +5956,6 @@ static void _slurm_rpc_persist_init(slurm_msg_t *msg)
 
 	if (msg->pcon)
 		error("We already have a persistent connect, this should never happen");
-
-	START_TIMER;
 
 	if (persist_init->version > SLURM_PROTOCOL_VERSION)
 		persist_init->version = SLURM_PROTOCOL_VERSION;
@@ -6034,7 +6046,6 @@ end_it:
 	}
 	xfree(comment);
 	FREE_NULL_BUFFER(ret_buf);
-	END_TIMER;
 
 	/* Don't free this here, it will be done elsewhere */
 	//slurm_persist_conn_destroy(persist_conn);
