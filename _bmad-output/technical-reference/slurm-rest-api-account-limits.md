@@ -111,7 +111,66 @@ sequenceDiagram
 
 ---
 
-## 4. 設定建議
+## 4. AccountingStorageEnforce 選項全解析
+
+`AccountingStorageEnforce` 是控制 Slurm 是否以及如何執行會計策略的總開關。
+
+### 4.1 選項層級與隱含行為
+
+在 `src/common/read_config.c` 的 `_validate_accounting_storage_enforce` 函式中，定義了各選項的層級關係。許多選項會**自動開啟**依賴的較低層級選項。
+
+| 選項 | 隱含開啟的選項 | 功能描述 |
+| :--- | :--- | :--- |
+| **associations** | 無 | 強制執行關聯性檢查。使用者提交作業時，必須在 DB 中有對應的 Association (User/Account/Cluster/Partition 組合)，否則拒絕提交。 |
+| **limits** | **associations** | 強制執行定義在 Association 或 QOS 上的資源限制 (如 `MaxJobs`, `MaxTRES` 等)。 |
+| **safe** | **associations**, **limits** | 啟用「安全」的限制檢查模式。若作業**預計**會導致超額 (如時間積分耗盡)，則拒絕啟動作業。 |
+| **qos** | **associations** | 強制執行 QOS (Quality of Service) 相關規則。 |
+| **wckeys** | **associations** | 強制執行 WCKey (Workload Characterization Key) 檢查。 |
+| **nojobs** | **nosteps** | 不將作業資訊寫入會計資料庫 (僅用於測試或特殊用途)。 |
+| **nosteps** | 無 | 不將作業步驟 (Step) 資訊寫入會計資料庫。 |
+| **all** | **associations**, **limits**, **safe**, **qos**, **wckeys** | 啟用所有強制執行選項 (但不包含 `nojobs` 和 `nosteps`)。 |
+
+### 4.2 深入解析：Safe 模式
+
+在 `limits` 模式下，Slurm 僅檢查「當前已用」資源是否超標。這可能導致作業跑到一半因額度耗盡而被殺死。`safe` 模式則引入了預測機制。
+
+#### 機制比較
+
+1.  **無 Safe (預設)**：
+    - 檢查：`CurrentUsage < Limit`
+    - 風險：作業執行中途 `CurrentUsage` 增加導致 `CurrentUsage > Limit`，作業被強制終止 (Kill)。
+
+2.  **有 Safe**：
+    - 檢查：`CurrentUsage + (JobTimeLimit * JobResources) < Limit`
+    - 優勢：Slurm 會計算作業跑完所需的總消耗。若預測會超標，作業將保持 `Pending` 狀態而不予啟動，避免浪費資源。
+
+#### 決策流程圖
+
+```mermaid
+flowchart TD
+    Submit[使用者提交作業<br>預計執行 60 分鐘] --> CheckCurrent{檢查當前額度<br>是否已滿?}
+    
+    CheckCurrent -->|已滿| Deny[拒絕/排隊]
+    CheckCurrent -->|未滿| IsSafeSet{是否設定了 safe?}
+    
+    IsSafeSet -->|No (預設)| RunJob[立即執行作業]
+    RunJob -->|執行中...| LimitHit{執行中途<br>額度耗盡?}
+    LimitHit -->|是| KillJob[☠️ 作業被強制殺死<br>浪費運算資源]
+    LimitHit -->|否| Finish[作業完成]
+
+    IsSafeSet -->|Yes (safe)| Predict{預測:<br>當前 + 預計使用量 > 限額?}
+    Predict -->|會超標| PendJob[✋ 暫緩執行 (Pending)<br>等待額度足夠]
+    Predict -->|不會超標| SafeRun[安全執行作業]
+    SafeRun --> FinishSafe[作業順利完成<br>不會因額度被殺]
+
+    style KillJob fill:#ffcccc,stroke:#ff0000
+    style SafeRun fill:#ccffcc,stroke:#00aa00
+    style PendJob fill:#ffffcc,stroke:#aaaa00
+```
+
+---
+
+## 5. 設定建議
 
 為了確保 API 設定的限制能夠生效，必須在 `slurm.conf` 中正確配置。
 
@@ -140,3 +199,11 @@ AccountingStorageEnforce=associations,limits,qos
 2.  **執行層面**：`slurm.conf` 中必須啟用 `AccountingStorageEnforce=limits`。
 
 若缺其一，限制將不會產生預期的阻擋效果。
+
+## 6. 相關文件參考
+
+建議閱讀以下文件以獲得更全面的背景知識：
+
+-   [Slurm 帳務與資源限制](../../doc/html/zh-tw/administrators/accounting.md) - 帳務系統基礎架構與配置概覽。
+-   [資源限制設定](../../doc/html/zh-tw/administrators/resource_limits.md) - 詳細的資源限制管理說明。
+
