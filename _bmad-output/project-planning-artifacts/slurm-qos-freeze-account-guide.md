@@ -3,7 +3,7 @@ title: Slurm QOS 限制優先級與凍結 Account 技術指南
 description: 深入解析 Slurm QOS 分配機制、限制優先級規則，以及如何可靠地凍結 Account
 author: BMAD Tech Writer
 date: 2026-02-10
-version: 1.3.0
+version: 1.3.1
 ---
 
 # Slurm QOS 限制優先級與凍結 Account 技術指南
@@ -307,7 +307,7 @@ if ((qos_rec.grp_jobs == INFINITE) &&      // 只有 QOS 未設定時
 | **GrpSubmitJobs** | `grp_submit_jobs` | `grp_submit_jobs` | QOS 覆蓋 Association |
 | **MaxJobs** | `max_jobs_pa`, `max_jobs_pu` | `max_jobs` | QOS 覆蓋 Association |
 | **MaxSubmitJobs** | `max_submit_jobs_pa`, `max_submit_jobs_pu` | `max_submit_jobs` | QOS 覆蓋 Association |
-| **GrpTRES** | `grp_tres` | `grp_tres` | 取最小值（MIN） |
+| **GrpTRES** | `grp_tres` | `grp_tres` | QOS 覆蓋 Association |
 
 #### 重要：覆蓋僅限「同欄位類型」
 
@@ -329,19 +329,29 @@ if ((qos_rec.grp_jobs == INFINITE) &&      // 只有 QOS 未設定時
 >
 > 特別注意：`sacctmgr add qos MaxJobs=1` 設定的是 QOS 的 `MaxJobsPU`，而非 `GrpJobs`。若 Association 設定的是 `GrpJobs=0`，QOS 的 `MaxJobsPU` 不會覆蓋它，因為它們屬於不同的限制類型。
 
-#### GrpTRES 取最小值的原始碼佐證
+#### GrpTRES 覆蓋行為的原始碼佐證
 
-與 GrpJobs 的互斥覆蓋不同，GrpTRES 會同時考慮 QOS 與 Association 的限制，取兩者的**最小值**：
+GrpTRES 與 GrpJobs 遵循相同的互斥覆蓋邏輯。`_validate_tres_limits_for_assoc()` 在檢查 Association 的 GrpTRES 前，會先確認 QOS 是否已設定該 TRES 限制：
 
 ```c
-// src/slurmctld/acct_policy.c 第1356-1358行
-// 函數：_validate_tres_limits_for_qos()
-max_tres_limit = grp_tres_array ? MIN(grp_tres_array[i],   // QOS GrpTRES
-                                      max_tres_array[i]) :  // Association MaxTRES
-                                  max_tres_array[i];
+// src/slurmctld/acct_policy.c 第1286-1293行
+// 函數：_validate_tres_limits_for_assoc()
+for (i = 0; i < g_tres_count; i++) {
+    (*tres_pos) = i;
+    if ((admin_set_limit_tres_array[i] == ADMIN_SET_LIMIT)
+        || (qos_tres_array[i] != INFINITE64)   // ← QOS 的 GrpTRES 有設定 → 跳過 Association 檢查
+        || (assoc_tres_array[i] == INFINITE64)
+        || (!job_tres_array[i] && !update_call))
+        continue;
+    // ... 只有 QOS 未設定時才檢查 Association 的 GrpTRES
+}
 ```
 
-這表示 GrpTRES 的限制是**聯合限制**：即使 QOS 允許較多的 TRES，若 Association 有更嚴格的 GrpTRES，兩者的最小值仍會生效。這與 GrpJobs 等限制的「QOS 完全覆蓋 Association」行為截然不同。
+呼叫時傳入的參數（`acct_policy.c:3328-3333`）：
+- `assoc_tres_array` = `assoc_ptr->grp_tres_ctld`（Association 的 GrpTRES）
+- `qos_tres_array` = `qos_rec.grp_tres_ctld`（QOS 的 GrpTRES）
+
+> **勘誤說明**：本文件先前版本誤將 `_validate_tres_limits_for_qos()` 內部的 `MIN(grp_tres_array[i], max_tres_array[i])` 解讀為「QOS GrpTRES 與 Association GrpTRES 取最小值」。實際上該 `MIN()` 是在比較同一個 QOS 內部的 `GrpTRES` 和 `MaxTRESPerUser` 兩個欄位，用於計算 QOS 自身的最嚴格上限，與 QOS vs Association 的覆蓋邏輯無關。
 
 ### 2.4 實際案例分析
 
