@@ -3,7 +3,7 @@ title: Slurm QOS 限制優先級與凍結 Account 技術指南
 description: 深入解析 Slurm QOS 分配機制、限制優先級規則，以及如何可靠地凍結 Account
 author: BMAD Tech Writer
 date: 2026-02-10
-version: 1.1.0
+version: 1.2.0
 ---
 
 # Slurm QOS 限制優先級與凍結 Account 技術指南
@@ -113,6 +113,115 @@ $ sacctmgr show assoc format=cluster,user,account,qos,defaultqos
 ---------- ---------- ---------- -------------------- ----------
   mycluster      john    physics    gpu,high,normal     normal
 ```
+
+### 1.5 Partition 與 QOS 的關係
+
+Partition **不需要**設定 QOS，QOS 對 Partition 而言是完全可選的。若未設定，預設值為 `NULL`。
+
+#### Partition 的 QOS 相關參數
+
+在 `slurm.conf` 中可為 Partition 設定以下三個 QOS 相關參數：
+
+| 參數 | 說明 | 範例 |
+|-----|------|------|
+| `QOS=` | 指定 Partition 層級的 QOS | `QOS=gpu_runnable` |
+| `AllowQOS=` | 允許使用此 Partition 的 QOS 清單（逗號分隔） | `AllowQOS=normal,high,gpu` |
+| `DenyQOS=` | 禁止使用此 Partition 的 QOS 清單（逗號分隔） | `DenyQOS=debug,test` |
+
+#### slurm.conf 設定範例
+
+```bash
+# 基本 Partition 設定（無 QOS）
+PartitionName=batch Nodes=node[001-100] Default=YES
+
+# 設定 Partition 層級 QOS
+PartitionName=gpu Nodes=gpu[01-08] QOS=gpu_runnable
+
+# 設定允許的 QOS 清單
+PartitionName=priority Nodes=node[001-050] AllowQOS=high,urgent
+
+# 設定禁止的 QOS 清單
+PartitionName=production Nodes=node[051-100] DenyQOS=debug,test
+```
+
+#### QOS 優先順序邏輯
+
+當 Job 提交時，系統依以下邏輯決定使用哪個 QOS：
+
+```mermaid
+flowchart TD
+    START[Job 提交] --> CHECK_JOB{"Job 有指定<br/>--qos=?"}
+    CHECK_JOB --> |"否"| CHECK_PART{"Partition 有設定<br/>QOS=?"}
+    CHECK_PART --> |"是"| USE_PART["使用 Partition QOS<br/>作為預設"]
+    CHECK_PART --> |"否"| NO_QOS["不套用任何 QOS"]
+
+    CHECK_JOB --> |"是"| CHECK_FLAG{"Job QOS 有<br/>OverPartQOS 旗標?"}
+    CHECK_FLAG --> |"是"| JOB_FIRST["Job QOS 優先級較高"]
+    CHECK_FLAG --> |"否"| PART_FIRST["Partition QOS 優先級較高<br/>（預設行為）"]
+
+    USE_PART --> VALIDATE
+    NO_QOS --> VALIDATE
+    JOB_FIRST --> VALIDATE
+    PART_FIRST --> VALIDATE
+
+    VALIDATE[驗證 AllowQOS / DenyQOS]
+
+    style USE_PART fill:#51cf66,color:#fff
+    style JOB_FIRST fill:#ff6b6b,color:#fff
+    style PART_FIRST fill:#4dabf7,color:#fff
+```
+
+#### 原始碼佐證
+
+**QOS 優先順序決定邏輯**（`src/slurmctld/acct_policy.c:5257-5291`）：
+
+```c
+extern void acct_policy_set_qos_order(job_record_t *job_ptr,
+                      slurmdb_qos_rec_t **qos_ptr_1,
+                      slurmdb_qos_rec_t **qos_ptr_2) {
+    if (job_ptr->qos_ptr) {
+        if (job_ptr->part_ptr && job_ptr->part_ptr->qos_ptr) {
+            // 檢查 Job QOS 是否有 OverPartQOS 旗標
+            if (job_ptr->qos_ptr->flags & QOS_FLAG_OVER_PART_QOS) {
+                // Job QOS 優先級較高
+                *qos_ptr_1 = job_ptr->qos_ptr;
+                *qos_ptr_2 = job_ptr->part_ptr->qos_ptr;
+            } else {
+                // Partition QOS 優先級較高（預設）
+                *qos_ptr_1 = job_ptr->part_ptr->qos_ptr;
+                *qos_ptr_2 = job_ptr->qos_ptr;
+            }
+        } else
+            *qos_ptr_1 = job_ptr->qos_ptr;
+    }
+}
+```
+
+**Partition 結構定義**（`src/common/part_record.h:108-111`）：
+
+```c
+char *qos_char;              /* requested QOS from slurm.conf */
+slurmdb_qos_rec_t *qos_ptr;  /* pointer to the quality of service record */
+```
+
+#### AllowQOS / DenyQOS 驗證邏輯
+
+當 Job 指定或使用某個 QOS 時，系統會檢查該 QOS 是否被 Partition 允許：
+
+- 若設定了 `AllowQOS`：只有清單中的 QOS 才能在該 Partition 提交 Job
+- 若設定了 `DenyQOS`：清單中的 QOS 將被拒絕
+- 設定的 QOS 名稱必須在 `sacctmgr` 中已存在，否則 `slurmctld` 啟動時會報錯
+
+> **參考來源**：`src/slurmctld/partition_mgr.c:2155-2230`
+
+#### 重點整理
+
+| 情境 | 行為 |
+|-----|------|
+| Partition 未設 QOS，Job 未指定 QOS | 不套用任何 Partition/Job QOS 限制 |
+| Partition 設了 QOS，Job 未指定 QOS | 使用 Partition QOS 作為 Job 的預設 QOS |
+| 兩者都有，Job QOS 無 `OverPartQOS` | Partition QOS 優先級較高（先檢查） |
+| 兩者都有，Job QOS 有 `OverPartQOS` | Job QOS 優先級較高（先檢查） |
 
 ---
 
@@ -548,6 +657,8 @@ $ tail -f /var/log/slurm/slurmdbd.log
 | Association 資料結構 | `slurm/slurmdb.h` | 定義 `slurmdb_assoc_rec_t` |
 | REST API - Associations | `src/slurmrestd/plugins/openapi/slurmdbd/associations.c` | API 實作 |
 | REST API - QOS | `src/slurmrestd/plugins/openapi/slurmdbd/qos.c` | API 實作 |
+| Partition 結構定義 | `src/common/part_record.h` | Partition QOS 欄位定義 |
+| Partition QOS 驗證 | `src/slurmctld/partition_mgr.c` | AllowQOS/DenyQOS 驗證邏輯 |
 | 官方文件 | `doc/html/resource_limits.shtml` | 限制優先級說明 |
 
 ## 附錄 B：限制優先級快速參考
