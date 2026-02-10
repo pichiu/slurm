@@ -3,7 +3,7 @@ title: Slurm QOS 限制優先級與凍結 Account 技術指南
 description: 深入解析 Slurm QOS 分配機制、限制優先級規則，以及如何可靠地凍結 Account
 author: BMAD Tech Writer
 date: 2026-02-10
-version: 1.2.0
+version: 1.3.0
 ---
 
 # Slurm QOS 限制優先級與凍結 Account 技術指南
@@ -309,6 +309,26 @@ if ((qos_rec.grp_jobs == INFINITE) &&      // 只有 QOS 未設定時
 | **MaxSubmitJobs** | `max_submit_jobs_pa`, `max_submit_jobs_pu` | `max_submit_jobs` | QOS 覆蓋 Association |
 | **GrpTRES** | `grp_tres` | `grp_tres` | 取最小值（MIN） |
 
+#### 重要：覆蓋僅限「同欄位類型」
+
+上表中每一列都是**獨立的互斥檢查**。QOS 的某個欄位只會覆蓋 Association 中**相同類型**的欄位，**跨欄位不會覆蓋**。例如：
+
+- QOS `GrpJobs=500` **會**覆蓋 Association `GrpJobs=0`（同為 `grp_jobs` 欄位）
+- QOS `MaxJobsPU=1` **不會**覆蓋 Association `GrpJobs=0`（不同欄位，各自獨立檢查）
+
+> **常見混淆：`sacctmgr` 指令與實際欄位的對應**
+>
+> 在 QOS 與 Association 中，相同的 `sacctmgr` 參數名稱可能對應到**不同的內部欄位**：
+>
+> | `sacctmgr` 參數 | QOS 實際欄位 | Association 實際欄位 |
+> |-----------------|-------------|---------------------|
+> | `MaxJobs=` | `max_jobs_pu`（Per User） | `max_jobs` |
+> | `MaxSubmitJobs=` | `max_submit_jobs_pu`（Per User） | `max_submit_jobs` |
+> | `GrpJobs=` | `grp_jobs` | `grp_jobs` |
+> | `GrpSubmitJobs=` | `grp_submit_jobs` | `grp_submit_jobs` |
+>
+> 特別注意：`sacctmgr add qos MaxJobs=1` 設定的是 QOS 的 `MaxJobsPU`，而非 `GrpJobs`。若 Association 設定的是 `GrpJobs=0`，QOS 的 `MaxJobsPU` 不會覆蓋它，因為它們屬於不同的限制類型。
+
 #### GrpTRES 取最小值的原始碼佐證
 
 與 GrpJobs 的互斥覆蓋不同，GrpTRES 會同時考慮 QOS 與 Association 的限制，取兩者的**最小值**：
@@ -345,6 +365,75 @@ flowchart LR
 ```
 
 **結果**：因為 QOS 設定了 `GrpJobs=500`，Account 的 `GrpJobs=0` 被**完全忽略**，使用者仍可提交作業。
+
+#### 反例：跨欄位類型不會覆蓋
+
+以下案例展示當 QOS 與 Association 設定的是**不同欄位類型**時，覆蓋不會發生：
+
+**環境設定：**
+
+```bash
+# QOS 設定 MaxJobs（實際欄位：MaxJobsPU）和 MaxSubmitJobs（MaxSubmitPU）
+$ sacctmgr -i add qos qos_test MaxJobs=1 MaxSubmitJobs=1
+
+# 確認 QOS 欄位 —— GrpJobs 和 GrpSubmit 為空（INFINITE）
+$ sacctmgr show qos qos_test format=name,grpjobs,grpsubmit,maxjobspu,maxsubmitpu -p
+Name|GrpJobs|GrpSubmit|MaxJobsPU|MaxSubmitPU|
+qos_test||||1|1|
+
+# Association 設定 GrpJobs=0 和 GrpSubmitJobs=0
+$ sacctmgr modify account my_acct set GrpJobs=0 GrpSubmitJobs=0
+
+# 確認 Association 欄位
+$ sacctmgr show assoc account=my_acct format=account,grpjobs,grpsubmit,maxjobs,qos -p
+Account|GrpJobs|GrpSubmit|MaxJobs|QOS|
+my_acct|0|0||qos_test|
+```
+
+```mermaid
+flowchart LR
+    subgraph "反例：QOS MaxJobsPU ≠ Account GrpSubmitJobs"
+        ACCT["Account: my_acct<br/>GrpJobs=0<br/>GrpSubmitJobs=0"] --> USER["User: john<br/>使用 QOS: qos_test"]
+        USER --> QOS["QOS: qos_test<br/>GrpJobs=未設定（INFINITE）<br/>GrpSubmitJobs=未設定（INFINITE）<br/>MaxJobsPU=1<br/>MaxSubmitPU=1"]
+    end
+
+    subgraph "GrpSubmitJobs 驗證流程"
+        Q1{"QOS GrpSubmitJobs<br/>== INFINITE?"} --> |"是（未設定）"| Q2{"Account GrpSubmitJobs<br/>!= INFINITE?"}
+        Q2 --> |"是（=0）"| R2["使用 Account 限制<br/>GrpSubmitJobs=0<br/>→ 拒絕提交"]
+    end
+
+    QOS --> Q1
+
+    style R2 fill:#ff6b6b,color:#fff
+```
+
+**結果**：
+
+```
+$ srun -p a30-set --gres=gpu:1 nvidia-smi -L
+srun: error: AssocGrpSubmitJobsLimit
+srun: error: Unable to allocate resources: Job violates accounting/QOS policy
+```
+
+QOS 的 `MaxJobsPU=1` 和 `MaxSubmitPU=1` **無法覆蓋** Account 的 `GrpSubmitJobs=0`，因為它們屬於不同的限制類型。系統檢查 `GrpSubmitJobs` 時，發現 QOS 的 `grp_submit_jobs == INFINITE`（未設定），便直接採用 Association 的 `GrpSubmitJobs=0`，導致作業被拒絕。
+
+> **原始碼佐證**（`src/slurmctld/acct_policy.c:3355-3368`）：
+>
+> ```c
+> if ((qos_rec.grp_submit_jobs == INFINITE) &&       // QOS 的 GrpSubmitJobs 未設定
+>     (assoc_ptr->grp_submit_jobs != INFINITE) &&    // Association 的 GrpSubmitJobs 有設定
+>     ((assoc_ptr->usage->used_submit_jobs + job_cnt)
+>      > assoc_ptr->grp_submit_jobs)) {              // 超過限制
+>         *reason = WAIT_ASSOC_GRP_SUB_JOB;          // → AssocGrpSubmitJobsLimit
+> }
+> ```
+
+#### 兩個案例對比
+
+| 情境 | QOS 欄位 | Account 欄位 | 同類型？ | 結果 |
+|------|----------|-------------|---------|------|
+| 案例一 | `GrpJobs=500` | `GrpJobs=0` | 是 | QOS 覆蓋，**可提交** |
+| 反例 | `MaxJobsPU=1`（`GrpSubmitJobs` 未設定） | `GrpSubmitJobs=0` | 否 | 不覆蓋，**被拒絕** |
 
 ---
 
