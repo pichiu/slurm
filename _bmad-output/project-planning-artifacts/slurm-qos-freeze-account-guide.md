@@ -3,7 +3,7 @@ title: Slurm QOS 限制優先級與凍結 Account 技術指南
 description: 深入解析 Slurm QOS 分配機制、限制優先級規則，以及如何可靠地凍結 Account
 author: BMAD Tech Writer
 date: 2026-02-10
-version: 1.0.0
+version: 1.1.0
 ---
 
 # Slurm QOS 限制優先級與凍結 Account 技術指南
@@ -142,6 +142,14 @@ flowchart TB
 
 **核心規則**：當限制在多個層級都有定義時，**第一個定義的限制會被使用**。
 
+> **注意事項**：
+>
+> - **Partition QOS 與 Job QOS 的順序可互換**：若 QOS 設定了 `OverPartQOS` 旗標，則 Job QOS 的優先級會高於 Partition QOS。
+> - **`Grp*` 限制的例外規則**：`Grp*` 類型的限制（如 `GrpTRES`）不完全遵循上述優先級順序。Account 層級的更嚴格 `Grp*` 限制會優先於 User 層級的較寬鬆限制，因為群組限制的本質要求最高層級的限制不可被超越。
+> - **Partition 層級的上界限制**：`Max[Time|Wall]`、`[Min|Max]Nodes` 這三類限制即使在 QOS 或 Association 有設定，仍不可超過 Partition 層級的限制（除非 QOS 設定了 `PartitionTimeLimit` 或 `Partition[Max|Min]Nodes` 旗標）。
+>
+> 參考來源：`doc/html/resource_limits.shtml` 第 33-46 行
+
 ### 2.2 互斥檢查機制
 
 這是理解限制優先級的**關鍵概念**。Slurm 使用「互斥檢查」邏輯：
@@ -165,15 +173,22 @@ flowchart TD
 #### 原始碼驗證
 
 ```c
-// src/slurmctld/acct_policy.c 第3870-3881行
+// src/slurmctld/acct_policy.c 第3870-3881行（簡化版）
 if ((qos_rec.grp_jobs == INFINITE) &&      // 只有 QOS 未設定時
     (assoc_ptr->grp_jobs != INFINITE) &&   // 且 Association 有設定
     (assoc_ptr->usage->used_jobs >= assoc_ptr->grp_jobs)) {
-    job_ptr->state_reason = WAIT_ASSOC_GRP_JOB;  // 才檢查 Association
+    xfree(job_ptr->state_desc);                   // 清除舊狀態描述
+    job_ptr->state_reason = WAIT_ASSOC_GRP_JOB;   // 才檢查 Association
+    debug2("%pJ being held, assoc %u is at or exceeds "
+           "group max jobs limit %u with %u for account %s",
+           job_ptr, assoc_ptr->id, assoc_ptr->grp_jobs,
+           assoc_ptr->usage->used_jobs, assoc_ptr->acct);
     rc = false;
     goto end_it;
 }
 ```
+
+> **Note**：實際程式碼包含 `xfree()` 釋放舊狀態描述，以及 `debug2()` 日誌輸出（可用於故障排除時追蹤限制觸發原因）。
 
 ### 2.3 各限制類型的優先級行為
 
@@ -184,6 +199,20 @@ if ((qos_rec.grp_jobs == INFINITE) &&      // 只有 QOS 未設定時
 | **MaxJobs** | `max_jobs_pa`, `max_jobs_pu` | `max_jobs` | QOS 覆蓋 Association |
 | **MaxSubmitJobs** | `max_submit_jobs_pa`, `max_submit_jobs_pu` | `max_submit_jobs` | QOS 覆蓋 Association |
 | **GrpTRES** | `grp_tres` | `grp_tres` | 取最小值（MIN） |
+
+#### GrpTRES 取最小值的原始碼佐證
+
+與 GrpJobs 的互斥覆蓋不同，GrpTRES 會同時考慮 QOS 與 Association 的限制，取兩者的**最小值**：
+
+```c
+// src/slurmctld/acct_policy.c 第1356-1358行
+// 函數：_validate_tres_limits_for_qos()
+max_tres_limit = grp_tres_array ? MIN(grp_tres_array[i],   // QOS GrpTRES
+                                      max_tres_array[i]) :  // Association MaxTRES
+                                  max_tres_array[i];
+```
+
+這表示 GrpTRES 的限制是**聯合限制**：即使 QOS 允許較多的 TRES，若 Association 有更嚴格的 GrpTRES，兩者的最小值仍會生效。這與 GrpJobs 等限制的「QOS 完全覆蓋 Association」行為截然不同。
 
 ### 2.4 實際案例分析
 
@@ -356,6 +385,10 @@ curl -X POST http://localhost:6820/slurmdb/v0.0.44/qos/ \
                 "user": 0
               }
             }
+          },
+          "group": {
+            "jobs": 0,
+            "submit_jobs": 0
           }
         }
       }
