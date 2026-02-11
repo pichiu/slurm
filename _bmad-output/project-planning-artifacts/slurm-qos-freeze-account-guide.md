@@ -2,8 +2,8 @@
 title: Slurm QOS 限制優先級與凍結 Account 技術指南
 description: 深入解析 Slurm QOS 分配機制、限制優先級規則，以及如何可靠地凍結 Account
 author: BMAD Tech Writer
-date: 2026-02-10
-version: 1.3.1
+date: 2026-02-11
+version: 1.4.0
 ---
 
 # Slurm QOS 限制優先級與凍結 Account 技術指南
@@ -467,7 +467,45 @@ flowchart TD
 
 ### 3.2 可靠的凍結方案
 
-#### 方案：建立專用 Freeze QOS 並強制 Account 使用
+#### Association 層級結構說明
+
+Slurm 的 Association 資料庫中，每個 Account 會有**兩種層級**的 Association：
+
+```mermaid
+flowchart TD
+    subgraph "Association 層級結構"
+        ACCT["Account: frozen_acct<br/>(user='' 或無 user)"] --> USER1["User: user1<br/>(user='user1')"]
+        ACCT --> USER2["User: user2<br/>(user='user2')"]
+        ACCT --> USER3["User: user3<br/>(user='user3')"]
+    end
+
+    subgraph "QOS 繼承機制"
+        ACCT_QOS["Account QOS:<br/>qos=['normal','high']<br/>defaultqos='normal'"] -.->|"新使用者繼承"| NEW_USER["新增使用者時<br/>自動套用 Account QOS"]
+        USER_QOS["User QOS:<br/>可以與 Account 不同"] -.->|"作業提交時"| JOB_CHECK["檢查 User Association<br/>的 QOS 列表"]
+    end
+```
+
+**關鍵概念**：
+
+1. **Account 層級 Association**（`user=""` 或 `user` 欄位為空）：
+   - 定義該 Account 的預設 QOS 設定
+   - **只影響新增使用者時的預設值**
+   - **不影響現有使用者的 QOS**
+
+2. **User 層級 Association**（`user="username"`）：
+   - 定義特定使用者在該 Account 下的 QOS 設定
+   - **作業提交時檢查的是 User Association，而非 Account Association**
+   - 可以與 Account 層級的 QOS 設定不同
+
+#### 為什麼必須修改所有 Association？
+
+當使用者提交作業時，Slurm 會檢查**該使用者的 User Association**（而非 Account Association）來決定可用的 QOS 列表。因此：
+
+- ✅ 修改 Account Association：只影響未來新增的使用者
+- ❌ 未修改 User Association：現有使用者仍可使用原有的 QOS
+- ✅ 修改 Account + 所有 User Association：完整凍結 Account
+
+#### 方案：建立專用 Freeze QOS 並強制所有 Association 使用
 
 ```mermaid
 flowchart TD
@@ -475,15 +513,19 @@ flowchart TD
         S1["sacctmgr add qos freeze<br/>GrpJobs=0<br/>GrpSubmitJobs=0<br/>MaxJobsPA=0<br/>MaxJobsPU=0"]
     end
 
-    subgraph "Step 2: 修改 Account"
+    subgraph "Step 2: 修改 Account Association"
         S2["sacctmgr modify account frozen_acct<br/>set qos=freeze<br/>defaultqos=freeze"]
     end
 
-    subgraph "結果"
-        R["Account 下所有 User<br/>只能使用 freeze QOS<br/>→ 無法提交任何作業"]
+    subgraph "Step 3: 修改所有 User Association"
+        S3["sacctmgr modify user where account=frozen_acct<br/>set qos=freeze<br/>defaultqos=freeze"]
     end
 
-    S1 --> S2 --> R
+    subgraph "結果"
+        R["Account 下所有使用者<br/>只能使用 freeze QOS<br/>→ 無法提交任何作業"]
+    end
+
+    S1 --> S2 --> S3 --> R
 
     style R fill:#51cf66,color:#fff
 ```
@@ -500,27 +542,46 @@ $ sacctmgr add qos freeze \
     MaxSubmitJobsPA=0 \
     MaxSubmitJobsPU=0
 
-# Step 2: 強制 Account 只能使用 freeze QOS
+# Step 2: 修改 Account 層級的 Association
 $ sacctmgr modify account frozen_acct set qos=freeze defaultqos=freeze
 
-# Step 3: 驗證設定
+# Step 3: 修改所有 User 層級的 Association（關鍵步驟！）
+# 方法 A：逐一修改每個使用者
+$ sacctmgr modify user user1 account=frozen_acct set qos=freeze defaultqos=freeze
+$ sacctmgr modify user user2 account=frozen_acct set qos=freeze defaultqos=freeze
+
+# 方法 B：使用 where 條件批次修改（推薦）
+$ sacctmgr modify user where account=frozen_acct set qos=freeze defaultqos=freeze
+
+# Step 4: 驗證設定（確認 Account 與所有 User Association 都已更新）
 $ sacctmgr show assoc account=frozen_acct \
     format=account,user,qos,defaultqos,grpjobs
 
-# Step 4: 測試提交（應被拒絕）
+# Step 5: 測試提交（應被拒絕）
 $ sbatch --account=frozen_acct test.sh
 # 預期輸出：sbatch: error: QOS job limit reached
 ```
 
+**注意事項**：
+
+- **必須同時修改 Account 層級與所有 User 層級的 Association**
+- 若只修改 Account 層級，現有使用者仍可使用其原有的 QOS 提交作業
+- 使用 `where account=frozen_acct` 可一次修改該 Account 下所有使用者的 Association
+
 ### 3.3 解凍 Account
 
 ```bash
-# 恢復 Account 可用的 QOS
+# Step 1: 恢復 Account 層級的 QOS
 $ sacctmgr modify account frozen_acct \
     set qos=normal,high,low defaultqos=normal
 
-# 驗證
-$ sacctmgr show assoc account=frozen_acct format=account,user,qos,defaultqos
+# Step 2: 恢復所有 User 層級的 QOS（關鍵步驟！）
+$ sacctmgr modify user where account=frozen_acct \
+    set qos=normal,high,low defaultqos=normal
+
+# Step 3: 驗證設定
+$ sacctmgr show assoc account=frozen_acct \
+    format=account,user,qos,defaultqos
 ```
 
 ### 3.4 方案比較
@@ -569,6 +630,21 @@ export SLURM_JWT=$(scontrol token username=admin lifespan=3600)
 
 ### 4.3 建立 Freeze QOS
 
+#### REST API 欄位映射關係
+
+根據原始碼 `src/plugins/data_parser/v0.0.44/parsers.c:8072-8095`，REST API JSON 欄位與 `slurmdb_qos_rec_t` 結構的映射如下：
+
+| sacctmgr 參數 | C 結構欄位 | REST API JSON 路徑 | 說明 |
+|--------------|-----------|-------------------|------|
+| `GrpJobs=0` | `grp_jobs` | `limits/max/active_jobs/count` | 最大運行作業數 |
+| `GrpSubmitJobs=0` | `grp_submit_jobs` | `limits/max/jobs/count` | 最大提交+運行作業數 |
+| `MaxJobsPA=0` | `max_jobs_pa` | `limits/max/jobs/active_jobs/per/account` | 每個 Account 最大運行作業數 |
+| `MaxJobsPU=0` | `max_jobs_pu` | `limits/max/jobs/active_jobs/per/user` | 每個 User 最大運行作業數 |
+| `MaxSubmitJobsPA=0` | `max_submit_jobs_pa` | `limits/max/jobs/per/account` | 每個 Account 最大提交作業數 |
+| `MaxSubmitJobsPU=0` | `max_submit_jobs_pu` | `limits/max/jobs/per/user` | 每個 User 最大提交作業數 |
+
+#### REST API 請求範例
+
 ```bash
 curl -X POST http://localhost:6820/slurmdb/v0.0.44/qos/ \
   -H "Content-Type: application/json" \
@@ -581,22 +657,22 @@ curl -X POST http://localhost:6820/slurmdb/v0.0.44/qos/ \
         "description": "Frozen QOS - no jobs allowed",
         "limits": {
           "max": {
-            "jobs": {
-              "per": {
-                "account": 0,
-                "user": 0
-              }
+            "active_jobs": {
+              "count": 0
             },
-            "submit_jobs": {
+            "jobs": {
+              "count": 0,
+              "active_jobs": {
+                "per": {
+                  "account": 0,
+                  "user": 0
+                }
+              },
               "per": {
                 "account": 0,
                 "user": 0
               }
             }
-          },
-          "group": {
-            "jobs": 0,
-            "submit_jobs": 0
           }
         }
       }
@@ -604,7 +680,36 @@ curl -X POST http://localhost:6820/slurmdb/v0.0.44/qos/ \
   }'
 ```
 
+**等效的 sacctmgr 指令**：
+
+```bash
+sacctmgr add qos freeze \
+    GrpJobs=0 \
+    GrpSubmitJobs=0 \
+    MaxJobsPA=0 \
+    MaxJobsPU=0 \
+    MaxSubmitJobsPA=0 \
+    MaxSubmitJobsPU=0
+```
+
 ### 4.4 修改 Account 的 QOS 設定
+
+#### 重要：必須修改所有 Association（Account 層級與 User 層級）
+
+Slurm 的 Association 分為兩種層級：
+
+1. **Account 層級 Association**（`user=""` 或 `user` 欄位為空）：定義 Account 本身的預設 QOS 與可用 QOS 列表
+2. **User 層級 Association**（`user="username"`）：定義特定使用者在該 Account 下的 QOS 設定
+
+**關鍵問題**：即使修改了 Account 層級的 Association，**現有的 User 層級 Association 仍會保留原有的 QOS 設定**。這表示：
+
+- 若只修改 Account 層級的 `qos=["freeze"]`，但 User Association 仍有 `qos=["normal", "high"]`
+- 使用者仍可使用 `normal` 和 `high` QOS 提交作業
+- **凍結機制失效**
+
+#### 方案一：修改 Account 層級 Association（僅影響新建使用者）
+
+此方法**只會影響在修改後新增的使用者**，對現有使用者無效：
 
 ```bash
 curl -X POST http://localhost:6820/slurmdb/v0.0.44/associations/ \
@@ -626,6 +731,194 @@ curl -X POST http://localhost:6820/slurmdb/v0.0.44/associations/ \
   }'
 ```
 
+#### 方案二：修改所有 User Association（完整凍結）
+
+要徹底凍結 Account，**必須修改該 Account 下所有使用者的 Association**：
+
+**步驟 1：查詢該 Account 下的所有使用者**
+
+```bash
+curl -X GET "http://localhost:6820/slurmdb/v0.0.44/associations/?account=frozen_acct" \
+  -H "Accept: application/json" \
+  -H "X-SLURM-USER-NAME: root" \
+  -H "X-SLURM-USER-TOKEN: $SLURM_JWT" | jq '.associations[] | select(.user != "") | .user'
+```
+
+**步驟 2：批次修改所有 User Association**
+
+```bash
+# 假設該 Account 有 user1, user2, user3 三個使用者
+curl -X POST http://localhost:6820/slurmdb/v0.0.44/associations/ \
+  -H "Content-Type: application/json" \
+  -H "X-SLURM-USER-NAME: root" \
+  -H "X-SLURM-USER-TOKEN: $SLURM_JWT" \
+  -d '{
+    "associations": [
+      {
+        "account": "frozen_acct",
+        "cluster": "mycluster",
+        "user": "user1",
+        "default": {
+          "qos": "freeze"
+        },
+        "qos": ["freeze"]
+      },
+      {
+        "account": "frozen_acct",
+        "cluster": "mycluster",
+        "user": "user2",
+        "default": {
+          "qos": "freeze"
+        },
+        "qos": ["freeze"]
+      },
+      {
+        "account": "frozen_acct",
+        "cluster": "mycluster",
+        "user": "user3",
+        "default": {
+          "qos": "freeze"
+        },
+        "qos": ["freeze"]
+      }
+    ]
+  }'
+```
+
+#### 原始碼佐證
+
+當作業提交時，Slurm 會檢查**使用者自己的 Association**（而非 Account 層級的 Association）來決定可用的 QOS 列表：
+
+```c
+// src/slurmctld/acct_policy.c 檢查限制時使用的是 job_ptr->assoc_ptr
+// job_ptr->assoc_ptr 指向的是該使用者在該 Account 下的 User Association
+// 而非 Account 層級的 Association
+```
+
+**結論**：要可靠地凍結 Account，**必須同時修改 Account 層級與所有 User 層級的 Association**，將 QOS 設定為 `["freeze"]` 並將 `defaultqos` 設為 `"freeze"`。
+
+#### API Endpoint 選擇說明
+
+在實作凍結機制時，需要選擇正確的 REST API endpoint 來查詢和修改 Associations。以下比較不同 endpoint 的差異：
+
+##### 查詢 API 比較
+
+| Endpoint | 用途 | 回傳內容 | 適用場景 |
+|----------|------|----------|----------|
+| `GET /associations/?account={name}` | 查詢 Associations | **所有** Association 記錄（包含 Account 層級 + 所有 User 層級） | ✅ **推薦**：凍結 Account 時使用 |
+| `GET /account/{name}` | 查詢 Account | Account 基本資訊（`name`, `description`, `organization`, `coordinators`） | ❌ 僅查詢 Account 屬性，無法獲取所有 User Association |
+| `GET /account/{name}?with_assocs=true` | 查詢 Account + Assoc | Account 基本資訊 + **僅 Account 層級** Association | ❌ **不包含 User Association**，無法用於凍結 |
+
+**原始碼佐證**：
+
+`GET /account/{name}` 的實作 (`src/slurmrestd/plugins/openapi/slurmdbd/accounts.c:341-384`)：
+```c
+// 呼叫 slurmdb_accounts_get()，返回 slurmdb_account_rec_t
+// 即使使用 with_assocs=true，也只返回 Account 層級的 Association
+if (query.with_assocs)
+    acct_cond.flags |= SLURMDB_ACCT_FLAG_WASSOC;  // 只查詢 Account 層級
+```
+
+`GET /associations/?account={name}` 的實作 (`src/slurmrestd/plugins/openapi/slurmdbd/associations.c:368-400`)：
+```c
+// 呼叫 slurmdb_associations_get()，返回 list_t *assoc_list
+// 包含該 Account 下的所有 Association（Account 層級 + User 層級）
+_dump_assoc_cond(ctxt, assoc_cond, false);
+```
+
+**結論**：凍結 Account 時必須使用 `GET /associations/?account={name}` 來獲取所有 User Association。
+
+##### 更新 API 比較
+
+| Endpoint | 用途 | 行為 | 適用場景 |
+|----------|------|------|----------|
+| `POST /associations/` | 更新 Associations | 逐一更新或新增每個 Association 記錄 | ✅ **推薦**：修改現有 Associations |
+| `POST /accounts_association/` | 建立 Account | **僅用於建立新 Account** + 同時建立其 Associations | ❌ 不支援修改現有 Account |
+
+**原始碼佐證**：
+
+`POST /accounts_association/` 的實作流程 (`src/plugins/accounting_storage/mysql/as_mysql_acct.c:551-690`)：
+```c
+extern char *as_mysql_add_accts_cond(...) {
+    // 第 609-614 行：先新增 Accounts 到 acct_table
+    if (list_for_each_ro(add_assoc->acct_list, _foreach_add_acct,
+                         &add_acct_cond) < 0) {
+        rc = add_acct_cond.rc;
+        goto end_it;
+    }
+
+    // 第 650 行：然後新增 Associations (呼叫 as_mysql_add_assocs_cond)
+    ret_str = as_mysql_add_assocs_cond(mysql_conn, uid, add_assoc);
+
+    // 這個函數設計用於建立 (add) 而非修改 (modify)
+}
+```
+
+`POST /associations/` 的實作 (`src/slurmrestd/plugins/openapi/slurmdbd/associations.c:250-319`)：
+```c
+static int _foreach_update_assoc(void *x, void *arg) {
+    // 第 278-289 行：如果 Association 不存在，則新增
+    if ((rc = db_query_list_xempty(ctxt, &assoc_list,
+                                   slurmdb_associations_get, &cond)) ||
+        !assoc_list || list_is_empty(assoc_list)) {
+        // 新增 Association
+        (void) db_query_rc(ctxt, assoc_list, slurmdb_associations_add);
+    } else {
+        // 第 294-309 行：如果 Association 已存在，則修改
+        diff_assoc = _diff_assoc(list_pop(assoc_list), assoc);
+        rc = db_modify_rc(ctxt, &cond, diff_assoc,
+                          slurmdb_associations_modify);
+    }
+}
+```
+
+**結論**：修改現有 Account 的 Associations 必須使用 `POST /associations/`，而非 `POST /accounts_association/`。
+
+##### 推薦的 API 使用流程
+
+**凍結 Account 的完整流程**：
+
+```bash
+# Step 1: 查詢該 Account 下的所有 Associations（包含所有 User）
+curl -X GET "http://localhost:6820/slurmdb/v0.0.44/associations/?account=frozen_acct" \
+  -H "Accept: application/json" \
+  -H "X-SLURM-USER-NAME: root" \
+  -H "X-SLURM-USER-TOKEN: $SLURM_JWT"
+
+# Step 2: 解析回傳的 JSON，提取所有 Associations（包含 user="" 的 Account 層級和 user!="" 的 User 層級）
+
+# Step 3: 使用 POST /associations/ 批次更新所有 Associations
+curl -X POST http://localhost:6820/slurmdb/v0.0.44/associations/ \
+  -H "Content-Type: application/json" \
+  -H "X-SLURM-USER-NAME: root" \
+  -H "X-SLURM-USER-TOKEN: $SLURM_JWT" \
+  -d '{
+    "associations": [
+      {
+        "account": "frozen_acct",
+        "cluster": "mycluster",
+        "user": "",         # Account 層級
+        "default": { "qos": "freeze" },
+        "qos": ["freeze"]
+      },
+      {
+        "account": "frozen_acct",
+        "cluster": "mycluster",
+        "user": "user1",    # User 層級
+        "default": { "qos": "freeze" },
+        "qos": ["freeze"]
+      },
+      {
+        "account": "frozen_acct",
+        "cluster": "mycluster",
+        "user": "user2",    # User 層級
+        "default": { "qos": "freeze" },
+        "qos": ["freeze"]
+      }
+    ]
+  }'
+```
+
 ### 4.5 查詢 Account 狀態
 
 ```bash
@@ -636,6 +929,10 @@ curl -X GET "http://localhost:6820/slurmdb/v0.0.44/associations/?account=frozen_
 ```
 
 ### 4.6 解凍 Account
+
+解凍 Account 時，同樣需要修改**所有 User Association**，恢復原有的 QOS 列表：
+
+**步驟 1：恢復 Account 層級 Association**
 
 ```bash
 curl -X POST http://localhost:6820/slurmdb/v0.0.44/associations/ \
@@ -655,6 +952,58 @@ curl -X POST http://localhost:6820/slurmdb/v0.0.44/associations/ \
       }
     ]
   }'
+```
+
+**步驟 2：恢復所有 User Association**
+
+```bash
+curl -X POST http://localhost:6820/slurmdb/v0.0.44/associations/ \
+  -H "Content-Type: application/json" \
+  -H "X-SLURM-USER-NAME: root" \
+  -H "X-SLURM-USER-TOKEN: $SLURM_JWT" \
+  -d '{
+    "associations": [
+      {
+        "account": "frozen_acct",
+        "cluster": "mycluster",
+        "user": "user1",
+        "default": {
+          "qos": "normal"
+        },
+        "qos": ["normal", "high", "low"]
+      },
+      {
+        "account": "frozen_acct",
+        "cluster": "mycluster",
+        "user": "user2",
+        "default": {
+          "qos": "normal"
+        },
+        "qos": ["normal", "high", "low"]
+      },
+      {
+        "account": "frozen_acct",
+        "cluster": "mycluster",
+        "user": "user3",
+        "default": {
+          "qos": "normal"
+        },
+        "qos": ["normal", "high", "low"]
+      }
+    ]
+  }'
+```
+
+**等效的 sacctmgr 指令**：
+
+```bash
+# 修改 Account 層級
+sacctmgr modify account frozen_acct set qos=normal,high,low defaultqos=normal
+
+# 修改所有 User 層級（需對每個使用者執行）
+sacctmgr modify user user1 account=frozen_acct set qos=normal,high,low defaultqos=normal
+sacctmgr modify user user2 account=frozen_acct set qos=normal,high,low defaultqos=normal
+sacctmgr modify user user3 account=frozen_acct set qos=normal,high,low defaultqos=normal
 ```
 
 ### 4.7 API 操作流程圖
@@ -780,9 +1129,48 @@ $ tail -f /var/log/slurm/slurmdbd.log
 
 ---
 
+## 變更歷史
+
+### 版本 1.4.0（2026-02-11）
+
+**新增內容**：
+- 新增 4.4 節「API Endpoint 選擇說明」，詳細比較不同 REST API endpoint 的差異與適用場景
+- 新增查詢 API 比較表（`/associations/` vs `/account/` vs `/account/?with_assocs=true`）
+- 新增更新 API 比較表（`/associations/` vs `/accounts_association/`）
+- 新增原始碼佐證，說明各 endpoint 的實際實作與行為差異
+- 新增推薦的 API 使用流程，提供完整的凍結 Account 範例
+
+**修正內容**：
+- 釐清 `GET /account/{name}?with_assocs=true` **不會**返回 User Association
+- 釐清 `POST /accounts_association/` **只能**用於建立新 Account，不能修改現有 Account
+- 強調必須使用 `GET /associations/?account={name}` 才能獲取所有 User Association
+
+**原始碼參考**：
+- `src/slurmrestd/plugins/openapi/slurmdbd/accounts.c:341-384`
+- `src/slurmrestd/plugins/openapi/slurmdbd/associations.c:250-319, 368-400`
+- `src/plugins/accounting_storage/mysql/as_mysql_acct.c:551-690`
+
+### 版本 1.3.1（2026-02-10）
+
+**新增內容**：
+- 新增 3.2 節「Association 層級結構說明」，解釋 Account 層級與 User 層級的差異
+- 新增流程圖說明 Association 層級檢查流程
+- 新增完整的凍結與解凍 Account 指令範例
+
+**修正內容**：
+- 修正 4.4 節，強調必須修改所有 User Association
+- 修正 4.6 節，補充解凍時也需要恢復所有 User Association
+- 新增原始碼佐證（`src/slurmctld/acct_policy.c`）
+
+---
+
 ## 參考資料
 
 - Slurm 官方文件：Resource Limits
 - Slurm 官方文件：Quality of Service (QOS)
 - Slurm REST API OpenAPI Specification v0.0.44
-- 原始碼分析：`src/slurmctld/acct_policy.c`
+- 原始碼分析：
+  - `src/slurmctld/acct_policy.c`（QOS 限制檢查邏輯）
+  - `src/slurmrestd/plugins/openapi/slurmdbd/accounts.c`（Account API 實作）
+  - `src/slurmrestd/plugins/openapi/slurmdbd/associations.c`（Association API 實作）
+  - `src/plugins/accounting_storage/mysql/as_mysql_acct.c`（MySQL 儲存層實作）
