@@ -54,8 +54,8 @@
 | InvalidAccount | 作業的帳號無效 |
 | InvalidQOS | 作業的 QOS 無效 |
 | JobArrayTaskLimit | 作業陣列同時執行任務數的限制已達到 |
-| JobHeldAdmin | 作業被系統管理員保持 |
-| JobHeldUser | 作業被使用者保持 |
+| JobHeldAdmin | 作業被具有特權的使用者保持 |
+| JobHeldUser | 作業被使用者或帳號協調員保持。每當使用 `scontrol uhold` 時也適用此原因。|
 | JobHoldMaxRequeue | 作業已重新排隊足夠次數達到 MAX_BATCH_REQUEUE 限制 |
 | JobLaunchFailure | 作業無法啟動（可能是檔案系統問題、無效程式名稱等）|
 | Licenses | 作業正在等待授權 |
@@ -249,7 +249,7 @@ $ sacctmgr show assoc user=$USER format=user,account,grptres
 | QOSMaxCpuPerUserLimit | 超過使用者 CPU 限制 | 等待其他作業完成 |
 | AssocGrpCpuLimit | 超過群組 CPU 限制 | 等待同帳號作業完成 |
 | PartitionTimeLimit | 超過分割區時間限制 | 減少時間請求 |
-| JobHeldUser | 使用者保持 | `scontrol release <jobid>` |
+| JobHeldUser | 使用者或帳號協調員保持（或使用 scontrol uhold）| `scontrol release <jobid>` |
 | ReqNodeNotAvail | 請求的節點不可用 | 檢查節點狀態或移除特定節點請求 |
 
 ### 查看原因的指令

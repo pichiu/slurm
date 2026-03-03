@@ -25,7 +25,7 @@ Slurm 可設定透過 API 管理任何雲端供應商（如 Amazon Web Services�
 
 - **ResumeProgram** 和 **SuspendProgram** 必須定義，值必須是有效的程式路徑
 - **ResumeTimeout** 和 **SuspendTimeout** 必須定義（全域或至少一個分割區）
-- **SuspendTime** 必須定義（全域或至少一個分割區），且不能是 INFINITE 或 -1
+- **SuspendTime** 必須定義（全域、至少一個分割區，或至少一個節點），且不能是 INFINITE 或 -1
 - **ResumeRate** 和 **SuspendRate** 必須大於或等於 0
 
 必須重新啟動 slurmctld 守護程式才能初次啟用節能操作。
@@ -80,6 +80,7 @@ Slurm 可設定透過 API 管理任何雲端供應商（如 Amazon Web Services�
 | **Feature** | 可與 --constraint 選項配合使用的節點特性 |
 | **NodeName** | Slurm 參照節點的名稱（建議使用數字後綴）|
 | **State** | 按需新增的節點應設為 CLOUD |
+| **SuspendTime** | 節點閒置或 DOWN 狀態超過此秒數後，由 SuspendProgram 置入節能模式。**優先於分割區層級和全域 SuspendTime 設定**。設為 INFINITE 可停用該節點的掛起。|
 | **Weight** | 資源使用順序權重（較低的先使用，預設 1）|
 
 ---
@@ -90,7 +91,7 @@ Slurm 可設定透過 API 管理任何雲端供應商（如 Amazon Web Services�
 |------|------|
 | **PowerDownOnIdle** | 設為 YES 時，節點在分配作業後變為閒置時會關機 |
 | **ResumeTimeout** | 分割區層級的恢復超時（覆蓋全域設定）|
-| **SuspendTime** | 分割區層級的掛起時間（設為 INFINITE 停用此分割區的掛起）|
+| **SuspendTime** | 分割區層級的掛起時間（設為 INFINITE 停用此分割區的掛起）。NodeName 行設定的 SuspendTime 優先於此分割區層級設定。|
 | **SuspendTimeout** | 分割區層級的掛起超時 |
 
 ---

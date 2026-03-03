@@ -2,7 +2,7 @@
 
 ## TL;DR
 
-Slurm 可設定為支援拓撲感知資源分配以最佳化作業效能。支援三種模式：三維環面（用於 Cray 系統）、階層樹狀（fat-tree/dragonfly）和區塊拓撲。設定 `TopologyPlugin=topology/tree` 和 `topology.conf` 定義交換器階層。使用者可用 `--switches` 選項指定最大葉交換器數。從 25.05 版本起支援多重拓撲和動態拓撲。
+Slurm 可設定為支援拓撲感知資源分配以最佳化作業效能。支援四種模式：三維環面（用於 Cray 系統）、階層樹狀（fat-tree/dragonfly）、區塊拓撲，以及 26.05 新增的環形拓撲（topology/ring）。設定 `TopologyPlugin=topology/tree` 和 `topology.conf` 定義交換器階層。使用者可用 `--switches` 選項指定最大葉交換器數。從 25.05 版本起支援多重拓撲和動態拓撲。
 
 ---
 
@@ -17,6 +17,7 @@ Slurm 可設定為支援拓撲感知資源分配以最佳化作業效能。Slurm
 | 三維環面 | Cray XT/XE | 內建 |
 | 階層樹狀 | Fat-tree, Dragonfly | topology/tree |
 | 區塊拓撲 | 階層區塊結構 | topology/block |
+| 環形拓撲 | 有序環形網路 | topology/ring（26.05+）|
 
 Slurm 的原生資源選擇模式是將節點視為一維陣列，作業以最佳擬合方式分配資源。
 
@@ -130,6 +131,39 @@ TopologyPlugin=topology/block
 
 ---
 
+### 環形拓撲
+
+Slurm 26.05 引入了環形拓撲，使用 `TopologyPlugin=topology/ring`。此外掛程式將叢集建模為一個或多個有序節點環。作業使用環中連續的節點片段進行分配，可在環末端繞回。
+
+```
+TopologyPlugin=topology/ring
+```
+
+在 `topology.conf` 中使用 `RingName` 和 `Nodes` 定義環形。`Nodes` 的順序決定環形位置（從 0 開始）。每個環最多可指定 16 個節點。
+
+**topology.conf 範例：**
+```
+# topology.conf
+RingName=ring0 Nodes=node[01-08]
+RingName=ring1 Nodes=node[09-16]
+```
+
+**使用 topology.yaml 的等效設定：**
+```yaml
+- topology: topo-ring
+  cluster_default: true
+  ring:
+    rings:
+      - ring: ring0
+        nodes: node[01-08]
+      - ring: ring1
+        nodes: node[09-16]
+```
+
+對於動態或雲端節點，`Topology` 欄位使用環形名稱和位置：`Topology=topo-ring:ring0:3`。建立新環時，環形位置必須為 0。
+
+---
+
 ### 使用者選項
 
 #### --switches 選項
@@ -149,18 +183,22 @@ sbatch --switches=2@10:00 script.sh
 
 #### 主機清單函數
 
+設定 `block`、`tree` 或 `ring` 拓撲後，可在與 slurmctld 互動的命令或設定檔中使用主機清單函數，替代或搭配一般主機清單表示式。
+
 | 函數 | 說明 |
 |------|------|
 | `block{blockX}` | 展開為指定區塊中的所有節點 |
 | `switch{switchY}` | 展開為指定交換器中的所有節點 |
+| `ring{ringZ}` | 展開為指定環形中的所有節點 |
 | `blockwith{nodeX}` | 展開為與指定節點相同區塊中的所有節點 |
 | `switchwith{nodeY}` | 展開為與指定節點相同交換器中的所有節點 |
+| `ringwith{nodeZ}` | 展開為與指定節點相同環形中的所有節點 |
 
 **範例**：
 ```bash
 scontrol update node=block{b1} state=resume
-sbatch --nodelist=blockwith{node0} -N 10 program
-PartitionName=Block10 Nodes=block{block10} ...
+sbatch --nodelist=switchwith{node0} -N 10 program
+PartitionName=Ring10 Nodes=ring{ring10} ...
 ```
 
 ---
@@ -239,12 +277,13 @@ slurmd --conf "Topology=topo-cloud:s1"
 
 ### 拓撲外掛程式比較
 
-| 特性 | topology/tree | topology/block |
-|------|---------------|----------------|
-| 適用網路 | 階層式（fat-tree、dragonfly）| 嚴格階層區塊 |
-| 分配策略 | 最小化網路跳躍 | 最小化碎片化 |
-| 彈性 | 較高 | 較低 |
-| 使用場景 | 一般 HPC | 特定架構 |
+| 特性 | topology/tree | topology/block | topology/ring |
+|------|---------------|----------------|---------------|
+| 適用網路 | 階層式（fat-tree、dragonfly）| 嚴格階層區塊 | 有序環形網路 |
+| 分配策略 | 最小化網路跳躍 | 最小化碎片化 | 連續環形片段 |
+| 彈性 | 較高 | 較低 | 中等 |
+| 使用場景 | 一般 HPC | 特定架構 | 環形互連架構 |
+| 最低版本 | — | — | 26.05 |
 
 ### 拓撲階層概念
 
@@ -361,6 +400,9 @@ TopologyParam=dragonfly
 
 # 區塊拓撲
 TopologyPlugin=topology/block
+
+# 環形拓撲（26.05+）
+TopologyPlugin=topology/ring
 
 # 可選：允許跨無共同父交換器
 TopologyParam=TopoOptional
