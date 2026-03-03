@@ -122,7 +122,7 @@ static void *_forward_thread(void *arg)
 	forward_t *fwd_ptr = &fwd_msg->header.forward;
 	buf_t *buffer = init_buf(BUF_SIZE);	/* probably enough for header */
 	list_t *ret_list = NULL;
-	void *conn = NULL;
+	conn_t *conn = NULL;
 	ret_data_info_t *ret_data_info = NULL;
 	char *name = NULL;
 	hostlist_t *hl = hostlist_create(fwd_ptr->nodelist);
@@ -576,7 +576,7 @@ static void _start_msg_tree_internal(hostlist_t *hl, hostlist_t **sp_hl,
 		(*fwd_tree->p_thr_count)++;
 		slurm_mutex_unlock(fwd_tree->tree_mutex);
 
-		slurm_thread_create_detached(_fwd_tree_thread, fwd_tree);
+		slurm_thread_create_detached(NULL, _fwd_tree_thread, fwd_tree);
 	}
 }
 
@@ -625,7 +625,7 @@ static void _forward_msg_internal(hostlist_t *hl, hostlist_t **sp_hl,
 		fwd_msg->header.forward.tree_width = header->forward.tree_width;
 		fwd_msg->header.forward.tree_depth = header->forward.tree_depth;
 		fwd_msg->header.forward.timeout = header->forward.timeout;
-		slurm_thread_create_detached(_forward_thread, fwd_msg);
+		slurm_thread_create_detached(NULL, _forward_thread, fwd_msg);
 	}
 }
 

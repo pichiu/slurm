@@ -33,6 +33,7 @@
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
+#include "slurm/slurm_errno.h"
 #include "src/common/data.h"
 #include "src/common/http.h"
 #include "src/common/plugrack.h"
@@ -46,6 +47,7 @@
 #include "src/slurmrestd/operations.h"
 
 #define OPENAPI_MAJOR_TYPE "openapi"
+#define MAX_URL_PATH_DEPTH 1024
 
 typedef struct {
 	int (*init)(void);
@@ -77,7 +79,6 @@ typedef enum {
  */
 typedef struct {
 	char *entry;
-	char *name;
 	entry_type_t type;
 	openapi_type_t parameter;
 } entry_t;
@@ -143,6 +144,22 @@ typedef struct {
 	/* tracked references per data_parser */
 	void **references;
 } openapi_spec_t;
+
+#define URL_PARSE_ARGS_MAGIC 0x0abfccaa
+
+typedef struct {
+	int magic; /* URL_PARSE_ARGS_MAGIC */
+	int count;
+	entry_t *entry;
+} url_parse_args_t;
+
+#define URL_PARSE_OPERATION_IDARGS_MAGIC 0xaaffec0e
+
+typedef struct {
+	int magic; /* URL_PARSE_OPERATION_IDARGS_MAGIC */
+	data_t *dpath;
+	data_t *last;
+} url_parse_operation_id_args_t;
 
 static list_t *paths = NULL;
 static int path_tag_counter = 0;
@@ -267,9 +284,25 @@ static const openapi_path_binding_method_t openapi_methods[] = {
 	{0}
 };
 
-static int _op_handler_openapi(openapi_ctxt_t *ctxt);
+/* health endpoints to match slurmctld and slurmd */
+static const openapi_path_binding_method_t health_methods[] = {
+	{
+		.method = HTTP_REQUEST_GET,
+		.tags = (const char *[]){"health", NULL},
+		.summary = "Check slurmrestd health status",
+		.response =
+			{
+				.type = DATA_PARSER_BOOL,
+				.description = "HTTP status check if service is online",
+			},
+	},
+	{ 0 }
+};
 
-#define OP_FLAGS (OP_BIND_HIDDEN_OAS | OP_BIND_NO_SLURMDBD)
+static int _op_handler_openapi(openapi_ctxt_t *ctxt);
+static int _op_handler_health(openapi_ctxt_t *ctxt);
+
+#define OP_FLAGS (OPENAPI_BIND_HIDDEN_OAS | OPENAPI_BIND_NO_SLURMDBD)
 
 /*
  * Paths to generate OpenAPI specification
@@ -299,7 +332,25 @@ static const openapi_path_binding_t openapi_paths[] = {
 		.methods = openapi_methods,
 		.flags = OP_FLAGS,
 	},
-	{0}
+	{
+		.path = "/healthz",
+		.callback = _op_handler_health,
+		.methods = health_methods,
+		.flags = OP_FLAGS,
+	},
+	{
+		.path = "/readyz",
+		.callback = _op_handler_health,
+		.methods = health_methods,
+		.flags = OP_FLAGS,
+	},
+	{
+		.path = "/livez",
+		.callback = _op_handler_health,
+		.methods = health_methods,
+		.flags = OP_FLAGS,
+	},
+	{ 0 }
 };
 
 static const http_status_code_t *response_status_codes = NULL;
@@ -345,13 +396,11 @@ static void _free_entry_list(entry_t *entry, int tag,
 		return;
 
 	while (itr->type) {
-		debug5("%s: remove path tag:%d method:%s entry:%s name:%s",
-		       __func__, tag,
-		       (method ? get_http_method_string(method->method) :
-				       "N/A"),
-		       itr->entry, itr->name);
+		debug5("%s: remove path tag:%d method:%s entry:%s",
+		       __func__, tag, (method ?
+				       get_http_method_string(method->method) :
+				       "N/A"), itr->entry);
 		xfree(itr->entry);
-		xfree(itr->name);
 		itr++;
 	}
 
@@ -385,76 +434,65 @@ static void _list_delete_path_t(void *x)
 	xfree(path);
 }
 
-static entry_t *_parse_openapi_path(const char *str_path, int *count_ptr)
+static int _on_parse_url_entry(const char *token, bool template, void *arg)
 {
-	char *save_ptr = NULL;
-	char *buffer = xstrdup(str_path);
-	char *token = strtok_r(buffer, "/", &save_ptr);
-	entry_t *entries = NULL;
-	entry_t *entry = NULL;
-	int count = 0;
+	url_parse_args_t *args = arg;
+	entry_t *entry = args->entry;
 
-	/* find max bound on number of entries */
-	for (const char *i = str_path; *i; i++)
-		if (*i == '/')
-			count++;
+	xassert(args->magic == URL_PARSE_ARGS_MAGIC);
 
-	if (count > 1024)
-		fatal_abort("%s: url %s is way too long", str_path, __func__);
-
-	entry = entries = xcalloc((count + 1), sizeof(entry_t));
-
-	while (token) {
-		const size_t slen = strlen(token);
-
-		/* ignore // entries */
-		if (slen <= 0)
-			goto again;
-
-		entry->entry = xstrdup(token);
-
-		if (!xstrcmp(token, ".") || !xstrcmp(token, "..")) {
-			/*
-			 * there should not be a .. or . in a path
-			 * definition, it just doesn't make any sense
-			 */
-			error("%s: invalid %s at entry",
-			      __func__, token);
-			goto fail;
-		} else if (slen > 3 && token[0] == '{' &&
-			   token[slen - 1] == '}') {
-			entry->type = OPENAPI_PATH_ENTRY_MATCH_PARAMETER;
-			entry->name = xstrndup(token + 1, slen - 2);
-
-			debug5("%s: parameter %s at entry %s",
-			       __func__, entry->name, token);
-		} else { /* not a variable */
-			entry->type = OPENAPI_PATH_ENTRY_MATCH_STRING;
-			entry->name = NULL;
-
-			debug5("%s: string match entry %s",
-			       __func__, token);
-		}
-
-		entry++;
-		xassert(entry <= entries + count);
-again:
-		token = strtok_r(NULL, "/", &save_ptr);
+	if (!args->entry) {
+		args->count++;
+		return SLURM_SUCCESS;
 	}
 
-	/* last is always NULL */
-	xassert(!entry->type);
-	xfree(buffer);
-	if (count_ptr)
-		*count_ptr = count;
-	return entries;
+	entry->entry = xstrdup(token);
 
-fail:
-	_free_entry_list(entries, -1, NULL);
-	xfree(buffer);
+	if (!xstrcmp(token, ".") || !xstrcmp(token, "..")) {
+		/*
+		 * there should not be a .. or . in a path
+		 * definition, it just doesn't make any sense
+		 */
+		error("%s: invalid %s at entry", __func__, token);
+		return ESLURM_URL_INVALID_PATH;
+	}
+
+	if (template) {
+		entry->type = OPENAPI_PATH_ENTRY_MATCH_PARAMETER;
+		debug5("%s: parameter %s at entry", __func__, token);
+	} else { /* not a variable */
+		entry->type = OPENAPI_PATH_ENTRY_MATCH_STRING;
+		debug5("%s: string match entry %s", __func__, token);
+	}
+
+	args->entry++;
+	return SLURM_SUCCESS;
+}
+
+static entry_t *_parse_openapi_path(const char *str_path, int *count_ptr)
+{
+	url_parse_args_t args = {
+		.magic = URL_PARSE_ARGS_MAGIC,
+	};
+	entry_t *entries = NULL;
+
+	if (url_path_walk(str_path, true, _on_parse_url_entry, &args))
+		fatal_abort("Unable to parse path format: %s", str_path);
+
+	xassert(args.count > 0);
+	xassert(args.count < MAX_URL_PATH_DEPTH);
+
+	args.entry = entries = xcalloc((args.count + 1), sizeof(*entries));
+
+	if (url_path_walk(str_path, true, _on_parse_url_entry, &args))
+		fatal_abort("Unable to parse path: %s", str_path);
+
+	xassert(args.entry <= (entries + args.count));
+
 	if (count_ptr)
-		*count_ptr = -1;
-	return NULL;
+		*count_ptr = args.count;
+
+	return entries;
 }
 
 static int _print_path_tag_methods(void *x, void *arg)
@@ -508,7 +546,6 @@ static void _clone_entries(entry_t **dst_ptr, entry_t *src, int count)
 
 	for (; src->type; src++, dst++) {
 		dst->entry = xstrdup(src->entry);
-		dst->name = xstrdup(src->name);
 		dst->type = src->type;
 		dst->parameter = src->parameter;
 	}
@@ -519,9 +556,9 @@ static void _check_openapi_path_binding(const openapi_path_binding_t *op_path)
 #ifndef NDEBUG
 	xassert(op_path->path);
 	xassert(op_path->callback);
-	xassert((op_path->flags == OP_BIND_NONE) ||
-		((op_path->flags > OP_BIND_NONE) &&
-		 (op_path->flags < OP_BIND_INVALID_MAX)));
+	xassert((op_path->flags == OPENAPI_BIND_NONE) ||
+		((op_path->flags > OPENAPI_BIND_NONE) &&
+		 (op_path->flags < OPENAPI_BIND_INVALID_MAX)));
 
 	for (int i = 0;; i++) {
 		const openapi_path_binding_method_t *method =
@@ -598,7 +635,7 @@ extern int register_path_binding(const char *in_path,
 	       __func__, (parser ? data_parser_get_plugin_version(parser) :
 			  "data_parser/none"), path);
 
-	xassert(!!in_path == !!(op_path->flags & OP_BIND_DATA_PARSER));
+	xassert(!!in_path == !!(op_path->flags & OPENAPI_BIND_DATA_PARSER));
 	_check_openapi_path_binding(op_path);
 
 	if (!(entries = _parse_openapi_path(path, &entries_count)))
@@ -662,12 +699,13 @@ extern int register_path_binding(const char *in_path,
 			if (e->type == OPENAPI_PATH_ENTRY_MATCH_PARAMETER)
 				e->parameter =
 					data_parser_g_resolve_openapi_type(
-						parser, m->parameters, e->name);
+						parser, m->parameters,
+						e->entry);
 
-			debug5("%s: add binded path %s entry: method=%s tag=%d entry=%s name=%s parameter=%s entry_type=%s",
+			debug5("%s: add binded path %s entry: method=%s tag=%d entry=%s parameter=%s entry_type=%s",
 			       __func__, path,
 			       get_http_method_string(m->method), tag, e->entry,
-			       e->name, openapi_type_to_string(e->parameter),
+			       openapi_type_to_string(e->parameter),
 			       _get_entry_type_string(e->type));
 		}
 
@@ -698,7 +736,7 @@ static bool _match_param(const data_t *data, match_path_from_data_t *args)
 	{
 		if (data_convert_type(match, DATA_TYPE_FLOAT) ==
 		    DATA_TYPE_FLOAT) {
-			data_set_float(data_key_set(params, entry->name),
+			data_set_float(data_key_set(params, entry->entry),
 				       data_get_float(match));
 			matched = true;
 		}
@@ -708,7 +746,7 @@ static bool _match_param(const data_t *data, match_path_from_data_t *args)
 	{
 		if (data_convert_type(match, DATA_TYPE_INT_64) ==
 		    DATA_TYPE_INT_64) {
-			data_set_int(data_key_set(params, entry->name),
+			data_set_int(data_key_set(params, entry->entry),
 				     data_get_int(match));
 			matched = true;
 		}
@@ -722,7 +760,7 @@ static bool _match_param(const data_t *data, match_path_from_data_t *args)
 	{
 		if (data_convert_type(match, DATA_TYPE_STRING) ==
 		    DATA_TYPE_STRING) {
-			data_set_string(data_key_set(params, entry->name),
+			data_set_string(data_key_set(params, entry->entry),
 					data_get_string(match));
 			matched = true;
 		}
@@ -735,7 +773,7 @@ static bool _match_param(const data_t *data, match_path_from_data_t *args)
 		data_get_string_converted(data, &str);
 
 		debug5("%s: parameter %s[%s]->%s[%s] result=%s",
-		       __func__, entry->name,
+		       __func__, entry->entry,
 		       openapi_type_to_string(entry->parameter),
 		       str, data_get_type_string(data),
 		       (matched ? "matched" : "failed"));
@@ -792,7 +830,7 @@ static char *_entry_to_string(entry_t *entry)
 			break;
 		case OPENAPI_PATH_ENTRY_MATCH_PARAMETER:
 			data_set_string_fmt(data_list_append(d), "{%s}",
-					    entry->name);
+					    entry->entry);
 			break;
 		case OPENAPI_PATH_ENTRY_UNKNOWN:
 		case OPENAPI_PATH_ENTRY_MAX:
@@ -1022,48 +1060,39 @@ static data_for_each_cmd_t _merge_operationId_strings(data_t *data, void *arg)
 	return DATA_FOR_EACH_CONT;
 }
 
-static data_for_each_cmd_t _foreach_strip_params(data_t *data, void *arg)
+static int _add_operation_path(const char *entry, bool template, void *arg)
 {
-	const char *item = data_get_string(data);
-	data_t **last_ptr = arg;
-	int len = strlen(item);
+	url_parse_operation_id_args_t *args = arg;
+	data_t *dpath = args->dpath;
+	data_t *last = args->last;
+	data_t *c = NULL;
 
-	xassert(item);
-	if (!item || (item[0] != '{')) {
-		char *dst = xstrdup(item);
-		char *last = dst;
+	xassert(args->magic == URL_PARSE_OPERATION_IDARGS_MAGIC);
 
-		/* strip out '.' */
-		for (int i = 0; i < len; i++) {
-			if (item[i] == '.')
-				continue;
+	if (!xstrcasecmp(entry, ".") || !xstrcasecmp(entry, ".."))
+		fatal_abort("OpenAPI path must not include . or ..");
 
-			*last = item[i];
-			last++;
-		}
-
-		*last = '\0';
-
-		data_set_string_own(data, dst);
-
-		*last_ptr = data;
-		return DATA_FOR_EACH_CONT;
-	}
-
-	xassert(len > 2);
-	xassert(item[len - 1] == '}');
-	if (*last_ptr &&
-	    !xstrncmp(data_get_string(*last_ptr), (item + 1), (len - 2))) {
+	if (template && last && !xstrcmp(data_get_string(last), entry)) {
 		/*
-		 * Last item is the same as the parameter name which means that
-		 * the item is uncountable and we need to set last as single.
+		 * Last entry is the same as the parameter name which means that
+		 * the entry is uncountable and we need to set last entry as
+		 * "single" to avoid ambiguous operationIds
 		 */
-		data_set_string(data, data_get_string(*last_ptr));
-		data_set_string(*last_ptr, "single");
-		return DATA_FOR_EACH_CONT;
+		data_set_string(data_list_append(dpath), entry);
+		c = data_set_string(last, "single");
+	} else if (template) {
+		/* skip including template names in operationId */
+	} else {
+		char *e = xstrdup(entry);
+
+		/* Strip out all '.' in entry */
+		xstrsubstituteall(e, ".", "");
+
+		c = data_set_string_own(data_list_append(dpath), e);
 	}
 
-	return DATA_FOR_EACH_DELETE;
+	args->last = c;
+	return SLURM_SUCCESS;
 }
 
 /* Caller must xfree() returned string */
@@ -1071,7 +1100,7 @@ static char *_get_method_operationId(openapi_spec_t *spec, path_t *path,
 				     const openapi_path_binding_method_t
 					     *method)
 {
-	data_t *merge[10] = {0}, *dpath, *merged = NULL, *last = NULL;
+	data_t *merge[10] = { 0 }, *dpath = NULL, *merged = NULL;
 	const char *method_str = get_http_method_string_lc(method->method);
 	int i = 0;
 	merge_path_t merge_args = {
@@ -1082,12 +1111,14 @@ static char *_get_method_operationId(openapi_spec_t *spec, path_t *path,
 		.magic = MAGIC_MERGE_ID_PATH,
 		.merge_args = &merge_args,
 	};
+	url_parse_operation_id_args_t url_args = {
+		.magic = URL_PARSE_OPERATION_IDARGS_MAGIC,
+	};
 
-	dpath = parse_url_path(path->path, false, true);
+	url_args.dpath = dpath = data_set_list(data_new());
+	(void) url_path_walk(path->path, true, _add_operation_path, &url_args);
 
 	xassert((data_get_list_length(dpath) + 1) < (ARRAY_SIZE(merge) - 1));
-
-	(void) data_list_for_each(dpath, _foreach_strip_params, &last);
 
 	if (data_get_list_length(dpath) < 3) {
 		/* unversioned paths */
@@ -1249,7 +1280,7 @@ static int _foreach_add_path(void *x, void *arg)
 	if (!bound)
 		return SLURM_SUCCESS;
 
-	if (bound->flags & OP_BIND_HIDDEN_OAS)
+	if (bound->flags & OPENAPI_BIND_HIDDEN_OAS)
 		return SLURM_SUCCESS;
 
 	xassert(!data_key_get(spec->paths, path->path));
@@ -1480,6 +1511,11 @@ static int _op_handler_openapi(openapi_ctxt_t *ctxt)
 	return generate_spec(ctxt->resp, get_mime_type_array());
 }
 
+static int _op_handler_health(openapi_ctxt_t *ctxt)
+{
+	return ESLURM_REST_EMPTY_RESULT;
+}
+
 static bool _on_error(void *arg, data_parser_type_t type, int error_code,
 		      const char *source, const char *why, ...)
 {
@@ -1681,10 +1717,10 @@ extern int wrap_openapi_ctxt_callback(const char *context_id,
 	      __func__, context_id, get_http_method_string(method),
 	      data_parser_get_plugin(ctxt.parser));
 
-	if (op_path->flags & OP_BIND_NO_SLURMDBD) {
+	if (op_path->flags & OPENAPI_BIND_NO_SLURMDBD) {
 		; /* Do not attempt to open a connection to slurmdbd */
 	} else if (!(ctxt.db_conn = db_conn)) {
-		if (op_path->flags & OP_BIND_REQUIRE_SLURMDBD)
+		if (op_path->flags & OPENAPI_BIND_REQUIRE_SLURMDBD)
 			openapi_resp_error(
 				&ctxt, (rc = ESLURM_DB_CONNECTION),
 				XSTRINGIFY(openapi_get_db_conn),
@@ -1706,7 +1742,7 @@ extern int wrap_openapi_ctxt_callback(const char *context_id,
 	if (data_get_type(ctxt.resp) == DATA_TYPE_NULL)
 		data_set_dict(ctxt.resp);
 
-	if (op_path->flags & OP_BIND_OPENAPI_RESP_FMT)
+	if (op_path->flags & OPENAPI_BIND_OPENAPI_RESP_FMT)
 		_populate_openapi_results(&ctxt, &query_meta);
 
 	if (!rc)

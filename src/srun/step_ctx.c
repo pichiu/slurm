@@ -53,34 +53,21 @@
 #include "slurm/slurm.h"
 
 #include "src/common/bitstring.h"
+#include "src/common/fd.h"
 #include "src/common/hostlist.h"
 #include "src/common/net.h"
 #include "src/common/read_config.h"
-#include "src/interfaces/cred.h"
 #include "src/common/slurm_protocol_api.h"
 #include "src/common/slurm_protocol_defs.h"
-#include "src/interfaces/switch.h"
 #include "src/common/timers.h"
 #include "src/common/xmalloc.h"
-#include "src/common/xsignal.h"
 #include "src/common/xstring.h"
+#include "src/interfaces/cred.h"
+#include "src/interfaces/switch.h"
 
-#include "step_ctx.h"
-#include "launch.h"
-
-int step_signals[] = {
-	SIGINT,  SIGQUIT, SIGCONT, SIGTERM, SIGHUP,
-	SIGALRM, SIGUSR1, SIGUSR2, SIGPIPE, 0 };
-static int destroy_step = 0;
-
-static void _signal_while_allocating(int signo)
-{
-	debug("Got signal %d", signo);
-	if (signo == SIGCONT)
-		return;
-
-	destroy_step = signo;
-}
+#include "src/srun/launch.h"
+#include "src/srun/signals.h"
+#include "src/srun/step_ctx.h"
 
 static void _job_fake_cred(struct slurm_step_ctx_struct *ctx)
 {
@@ -144,7 +131,7 @@ extern slurm_step_ctx_t *step_ctx_create_timeout(
 	int errnum = 0;
 	int cc;
 	uint16_t *ports;
-	struct pollfd fds;
+	struct pollfd fds[2];
 	long elapsed_time;
 	DEF_TIMERS;
 
@@ -167,35 +154,43 @@ extern slurm_step_ctx_t *step_ctx_create_timeout(
 	step_req->port = port;
 
 	rc = slurm_job_step_create(step_req, &step_resp);
-	if ((rc < 0) && launch_common_step_retry_errno(errno)) {
+	if ((rc < 0) && launch_step_retry_errno(errno)) {
 		START_TIMER;
 		errnum = errno;
-		fds.fd = sock;
-		fds.events = POLLIN;
-		xsignal_unblock(step_signals);
-		for (i = 0; step_signals[i]; i++)
-			xsignal(step_signals[i], _signal_while_allocating);
+		fds[0].fd = sock;
+		fds[0].events = POLLIN;
+		fds[1].fd = srun_sig_eventfd;
+		fds[1].events = POLLIN;
+
 		while (1) {
 			END_TIMER;
 			elapsed_time = (TIMER_DURATION_USEC() / 1000);
 			if (elapsed_time >= timeout)
 				break;
 			time_left = timeout - elapsed_time;
-			i = poll(&fds, 1, time_left);
+			i = poll(fds, 2, time_left);
+
+			/* Caught destroy signal during poll() */
+			if (fds[1].revents & POLLIN)
+				break;
+
 			if (i == 0)
 				*timed_out = true;
-			if ((i >= 0) || destroy_step)
+			if (i >= 0)
 				break;
 			if ((errno == EINTR) || (errno == EAGAIN))
 				continue;
 			break;
 		}
-		xsignal_block(step_signals);
-		if (destroy_step) {
+
+		slurm_mutex_lock(&srun_destroy_sig_lock);
+		if (srun_destroy_sig) {
 			info("Cancelled pending job step with signal %d",
-			     destroy_step);
+			     srun_destroy_sig);
 			errnum = ESLURM_ALREADY_DONE;
 		}
+		slurm_mutex_unlock(&srun_destroy_sig_lock);
+
 		close(sock);
 		errno = errnum;
 	} else if ((rc < 0) || (step_resp == NULL)) {

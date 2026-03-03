@@ -36,10 +36,6 @@
 #define _GNU_SOURCE
 #include "config.h"
 
-#if HAVE_SYS_PRCTL_H
-#include <sys/prctl.h>
-#endif
-
 #include <limits.h>
 #include <stdint.h>
 #include <sys/un.h>
@@ -974,6 +970,19 @@ static int _handle_connection(conmgr_fd_t *con, handle_connection_args_t *args)
 		return 0;
 	}
 
+	if (!con_flag(con, FLAG_IS_LISTEN) && is_tls &&
+	    con_flag(con, FLAG_IS_TLS_CONNECTED) &&
+	    !con_flag(con, FLAG_ON_DATA_TRIED) &&
+	    con_flag(con, FLAG_IS_TLS_SHUTTING_DOWN) &&
+	    !con_flag(con, FLAG_READ_EOF)) {
+		xassert(con_flag(con, FLAG_IS_TLS_CONNECTED));
+
+		log_flag(CONMGR, "%s: [%s] queuing up TLS shutdown",
+			 __func__, con->name);
+		add_work_con_fifo(true, con, tls_close, NULL);
+		return 0;
+	}
+
 	/* handle already read data */
 	if (!con_flag(con, FLAG_IS_LISTEN) && get_buf_offset(con->in) &&
 	    !con_flag(con, FLAG_ON_DATA_TRIED)) {
@@ -1098,13 +1107,6 @@ static int _handle_connection(conmgr_fd_t *con, handle_connection_args_t *args)
 			xfree(flags);
 		}
 
-		return 0;
-	}
-
-	if (!con_flag(con, FLAG_IS_LISTEN) && is_tls && con->tls) {
-		log_flag(CONMGR, "%s: [%s] waiting to close TLS connection",
-			 __func__, con->name);
-		add_work_con_fifo(true, con, tls_close, NULL);
 		return 0;
 	}
 
@@ -1256,7 +1258,7 @@ static bool _attempt_accept(conmgr_fd_t *con)
 	/* hand over FD for normal processing */
 	if ((rc = add_connection(type, con, fd, fd, con->events,
 				 (conmgr_con_flags_t) flags, &addr, addrlen,
-				 false, unix_path, NULL, con->new_arg))) {
+				 false, unix_path, NULL, NULL, con->new_arg))) {
 		log_flag(CONMGR, "%s: [fd:%d] unable to a register new connection: %s",
 			 __func__, fd, slurm_strerror(rc));
 		return true;
@@ -1482,6 +1484,7 @@ static void _connection_fd_delete(conmgr_callback_args_t conmgr_args, void *arg)
 
 	FREE_NULL_BUFFER(con->in);
 	FREE_NULL_BUFFER(con->tls_in);
+	xfree(con->tls_cert);
 	FREE_NULL_LIST(con->out);
 	FREE_NULL_LIST(con->tls_out);
 	FREE_NULL_LIST(con->work);
@@ -1773,18 +1776,4 @@ extern void *watch(void *arg)
 	slurm_mutex_unlock(&mgr.mutex);
 
 	return NULL;
-}
-
-extern void *watch_thread(void *arg)
-{
-#if HAVE_SYS_PRCTL_H
-	static char title[] = "watch";
-
-	if (prctl(PR_SET_NAME, title, NULL, NULL, NULL)) {
-		error("%s: cannot set process name to %s %m",
-		      __func__, title);
-	}
-#endif
-
-	return watch(NULL);
 }

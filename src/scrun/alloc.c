@@ -544,7 +544,7 @@ static void _alloc_job(void)
 	      __func__, (desc->num_tasks == NO_VAL ? 1 : desc->num_tasks),
 	      (desc->min_nodes == NO_VAL ? 1 : desc->min_nodes));
 	alloc = slurm_allocate_resources_blocking(desc, false,
-						  _pending_callback);
+						  _pending_callback, -1);
 	if (!alloc)
 		fatal("Unable to request job allocation: %m");
 	if (alloc->error_code) {
@@ -570,6 +570,7 @@ static void _alloc_job(void)
 
 	/* take job env (if any) for srun calls later */
 	SWAP(state.job_env, alloc->environment);
+	alloc->env_size = envcount(alloc->environment);
 
 	/* apply SPANK env (if any) */
 	for (int i = 0; i < opt.spank_job_env_size; i++) {

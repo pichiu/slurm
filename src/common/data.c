@@ -39,6 +39,7 @@
 #include <math.h>
 
 #include "src/common/data.h"
+#include "src/common/http.h"
 #include "src/common/list.h"
 #include "src/common/log.h"
 #include "src/common/read_config.h"
@@ -153,6 +154,27 @@ typedef struct {
 	data_t *src;
 	int64_t index;
 } convert_data_foreach_list_dict_args_t;
+
+#define PARSE_DICT_PATH_ARGS_MAGIC 0x8aa834af
+
+typedef struct {
+	int magic; /* PARSE_DICT_PATH_ARGS_MAGIC */
+	data_t *found;
+} dict_path_args_t;
+
+#define PARSE_DICT_PATH_CONST_ARGS_MAGIC 0x802834af
+
+typedef struct {
+	int magic; /* PARSE_DICT_PATH_CONST_ARGS_MAGIC  */
+	const data_t *found;
+} dict_path_const_args_t;
+
+#define DEFINE_DICT_PATH_ARGS_MAGIC 0x02bbafff
+
+typedef struct {
+	int magic; /* DEFINE_DICT_PATH_ARGS_MAGIC */
+	data_t *found;
+} dict_path_define_args_t;
 
 static void _check_magic(const data_t *data);
 static void _release(data_t *data);
@@ -2183,149 +2205,136 @@ extern bool data_check_match(const data_t *a, const data_t *b, bool mask)
 	fatal_abort("%s: should never run", __func__);
 }
 
+static int _on_dict_path(const char *entry, bool template, void *arg)
+{
+	dict_path_args_t *args = arg;
+	data_t *src = args->found;
+
+	_check_magic(src);
+	xassert(args->magic == PARSE_DICT_PATH_ARGS_MAGIC);
+	xassert(!template);
+
+	if (args->found->type != TYPE_DICT)
+		return EINVAL;
+
+	if (!(args->found = data_key_get(src, entry)))
+		return EINVAL;
+
+	return SLURM_SUCCESS;
+}
+
 extern data_t *data_resolve_dict_path(data_t *data, const char *path)
 {
-	data_t *found = data;
-	char *save_ptr = NULL;
-	char *token = NULL;
-	char *str;
-	char local[DATA_DEFINE_DICT_PATH_BUFFER_SIZE];
-	size_t len = strlen(path);
+	dict_path_args_t args = {
+		.magic = PARSE_DICT_PATH_ARGS_MAGIC,
+		.found = data,
+	};
 
 	_check_magic(data);
 
-	if (!data)
+	if (!data || (data->type != TYPE_DICT))
 		return NULL;
 
-	if (len < sizeof(local))
-		str = memcpy(local, path, (len + 1));
-	else
-		str = xstrdup(path);
-
-	token = strtok_r(str, "/", &save_ptr);
-	while (token && found) {
-		/* walk forward any whitespace */
-		while (*token && isspace(*token))
-			token++;
-
-		/* zero any ending whitespace */
-		for (int i = strlen(token) - 1; i >= 0; i--) {
-			if (isspace(token[i]))
-				token[i] = '\0';
-			else
-				break;
-		}
-
-		if (!found || (found->type != TYPE_DICT)) {
-			found = NULL;
-			break;
-		}
-
-		if (!(found = data_key_get(found, token)))
-			break;
-
-		token = strtok_r(NULL, "/", &save_ptr);
-	}
-
-	if (str != local)
-		xfree(str);
-
-	if (found)
+	if (!url_path_walk(path, false, _on_dict_path, &args)) {
 		log_flag_hex(DATA, path, strlen(path),
 			     "%s: %pD resolved dictionary path to %pD",
-			     __func__, data, found);
-	else
+			     __func__, data, args.found);
+		return args.found;
+	} else {
 		log_flag_hex(DATA, path, strlen(path),
 			     "%s: %pD failed to resolve dictionary path",
 			     __func__, data);
-	return found;
+		return NULL;
+	}
+}
+
+static int _on_dict_path_const(const char *entry, bool template, void *arg)
+{
+	dict_path_const_args_t *args = arg;
+	const data_t *src = args->found;
+
+	_check_magic(src);
+	xassert(args->magic == PARSE_DICT_PATH_CONST_ARGS_MAGIC);
+	xassert(!template);
+
+	if (args->found->type != TYPE_DICT)
+		return EINVAL;
+
+	if (!(args->found = data_key_get_const(src, entry)))
+		return EINVAL;
+
+	return SLURM_SUCCESS;
 }
 
 extern const data_t *data_resolve_dict_path_const(const data_t *data,
 						  const char *path)
 {
-	const data_t *found = data;
-	char *save_ptr = NULL;
-	char *token = NULL;
-	char *str;
+	dict_path_const_args_t args = {
+		.magic = PARSE_DICT_PATH_CONST_ARGS_MAGIC,
+		.found = data,
+	};
 
 	_check_magic(data);
 
-	if (!data)
+	if (!data || (data->type != TYPE_DICT))
 		return NULL;
 
-	str = xstrdup(path);
-
-	token = strtok_r(str, "/", &save_ptr);
-	while (token && found) {
-		xstrtrim(token);
-
-		if (!found || (found->type != TYPE_DICT)) {
-			found = NULL;
-			break;
-		}
-
-		if (!(found = data_key_get_const(found, token)))
-			break;
-
-		token = strtok_r(NULL, "/", &save_ptr);
-	}
-	xfree(str);
-
-	if (found)
+	if (!url_path_walk(path, false, _on_dict_path_const, &args)) {
 		log_flag_hex(DATA, path, strlen(path),
-			     "%s: data %pD resolved dictionary path to %pD",
-			     __func__, data, found);
-	else
+			     "%s: %pD resolved dictionary path to %pD",
+			     __func__, data, args.found);
+		return args.found;
+	} else {
 		log_flag_hex(DATA, path, strlen(path),
-			     "%s: data %pD failed to resolve dictionary path",
+			     "%s: %pD failed to resolve dictionary path",
 			     __func__, data);
+		return NULL;
+	}
+}
 
-	return found;
+static int _on_dict_path_define(const char *entry, bool template, void *arg)
+{
+	dict_path_define_args_t *args = arg;
+	data_t *src = args->found;
+
+	_check_magic(src);
+	xassert(args->magic == PARSE_DICT_PATH_ARGS_MAGIC);
+	xassert(!template);
+
+	if (args->found->type == TYPE_NULL)
+		data_set_dict(src);
+	else if (args->found->type != TYPE_DICT)
+		return EINVAL;
+
+	if (!(args->found = data_key_set(src, entry)))
+		return EINVAL;
+
+	return SLURM_SUCCESS;
 }
 
 extern data_t *data_define_dict_path(data_t *data, const char *path)
 {
-	data_t *found = data;
-	char *save_ptr = NULL;
-	char *token = NULL;
-	char *str;
+	dict_path_define_args_t args = {
+		.magic = PARSE_DICT_PATH_ARGS_MAGIC,
+		.found = data,
+	};
 
 	_check_magic(data);
 
 	if (!data)
 		return NULL;
 
-	str = xstrdup(path);
-
-	token = strtok_r(str, "/", &save_ptr);
-	while (token && found) {
-		xstrtrim(token);
-
-		if (found->type == TYPE_NULL)
-			data_set_dict(found);
-		else if (found->type != TYPE_DICT) {
-			found = NULL;
-			break;
-		}
-
-		if (!(found = data_key_set(found, token)))
-			break;
-
-		token = strtok_r(NULL, "/", &save_ptr);
-	}
-	xfree(str);
-
-	if (found)
+	if (!url_path_walk(path, false, _on_dict_path_define, &args)) {
 		log_flag_hex(DATA, path, strlen(path),
 			     "%s: %pD defined dictionary path to %pD",
-			     __func__, data, found);
-	else
+			     __func__, data, args.found);
+		return args.found;
+	} else {
 		log_flag_hex(DATA, path, strlen(path),
 			     "%s: %pD failed to define dictionary path",
 			     __func__, data);
-
-	return found;
+		return NULL;
+	}
 }
 
 extern data_t *data_copy(data_t *dest, const data_t *src)

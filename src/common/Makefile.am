@@ -10,6 +10,8 @@ noinst_LTLIBRARIES = libcommon.la
 libcommon_la_SOURCES =				\
 	assoc_mgr.c				\
 	assoc_mgr.h				\
+	atomic.c				\
+	atomic.h				\
 	bitstring.c				\
 	bitstring.h				\
 	callerid.c				\
@@ -129,6 +131,10 @@ libcommon_la_SOURCES =				\
 	run_in_daemon.h				\
 	sack_api.c				\
 	sack_api.h				\
+	sercli.c				\
+	sercli.h				\
+	serdes.c				\
+	serdes.h				\
 	setproctitle.c				\
 	setproctitle.h				\
 	sluid.c					\

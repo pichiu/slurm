@@ -274,7 +274,7 @@
 #define	free_buf		slurm_free_buf
 #define grow_buf		slurm_grow_buf
 #define	init_buf		slurm_init_buf
-#define	xfer_buf_data		slurm_xfer_buf_data
+#define xfer_buf_data_ptr slurm_xfer_buf_data_ptr
 #define	pack_time		slurm_pack_time
 #define	unpack_time		slurm_unpack_time
 #define	packfloat 		slurm_packfloat
@@ -547,6 +547,8 @@
 #define serialize_g_data_to_string slurm_serialize_g_data_to_string
 #define serialize_g_string_to_data slurm_serialize_g_string_to_data
 #define serializer_g_fini slurm_serializer_g_fini
+#define serialize_g_parse slurm_serialize_g_parse
+#define serialize_g_dump slurm_serialize_g_dump
 
 /* certgen.[ch] functions */
 #define certgen_g_init slurm_certgen_g_init
@@ -574,6 +576,8 @@
 /* threadpool.[ch] functions */
 #define threadpool_create slurm_threadpool_create
 #define threadpool_join slurm_threadpool_join
+#define threadpool_init slurm_threadpool_init
+#define threadpool_fini slurm_threadpool_fini
 
 #endif /* USE_ALIAS */
 

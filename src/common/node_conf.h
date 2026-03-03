@@ -75,6 +75,7 @@ typedef struct {
 	uint64_t real_memory;	/* MB real memory on the node */
 	uint16_t res_cores_per_gpu; /* number of cores per GPU to allow
 				     * to only GPU jobs */
+	uint32_t suspend_time; /* node idle time before power save mode */
 	uint16_t threads;	/* number of threads per core */
 	uint32_t tmp_disk;	/* MB total storage in TMP_FS file system */
 	uint16_t tot_sockets;	/* number of sockets per node */

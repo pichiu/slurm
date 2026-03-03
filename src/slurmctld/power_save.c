@@ -46,10 +46,6 @@
 
 #define _GNU_SOURCE
 
-#if HAVE_SYS_PRCTL_H
-#  include <sys/prctl.h>
-#endif
-
 #include <limits.h>	/* For LONG_MIN, LONG_MAX */
 #include <signal.h>
 #include <stdlib.h>
@@ -839,16 +835,10 @@ static void _clear_power_config(void)
 	FREE_NULL_LIST(partial_node_list);
 }
 
-static int _set_partition_options(void *x, void *arg)
+static int _set_partition_options(void *x, void *ignored)
 {
 	part_record_t *part_ptr = (part_record_t *)x;
 	node_record_t *node_ptr;
-	bool *suspend_time_set = (bool *)arg;
-
-	if (suspend_time_set &&
-	    (part_ptr->suspend_time != INFINITE) &&
-	    (part_ptr->suspend_time != NO_VAL))
-		*suspend_time_set = true;
 
 	if (part_ptr->resume_timeout != NO_VAL16)
 		max_timeout = MAX(max_timeout, part_ptr->resume_timeout);
@@ -858,9 +848,14 @@ static int _set_partition_options(void *x, void *arg)
 
 	for (int i = 0;
 	     (node_ptr = next_node_bitmap(part_ptr->node_bitmap, &i)); i++) {
+		/*
+		 * Only update suspend_time from partition if not already set
+		 * at node level (from NodeName configuration)
+		 */
 		if (node_ptr->suspend_time == NO_VAL)
 			node_ptr->suspend_time = part_ptr->suspend_time;
-		else if (part_ptr->suspend_time != NO_VAL)
+		else if (node_ptr->config_ptr->suspend_time == NO_VAL &&
+			 part_ptr->suspend_time != NO_VAL)
 			node_ptr->suspend_time = MAX(node_ptr->suspend_time,
 						     part_ptr->suspend_time);
 
@@ -1005,7 +1000,7 @@ static void power_save_rl_setup(void)
 static int _init_power_config(void)
 {
 	char *tmp_ptr;
-	bool partition_suspend_time_set = false;
+	bool suspend_time_set = false;
 
 	last_log	= 0;
 	suspend_rate = slurm_conf.suspend_rate;
@@ -1036,10 +1031,10 @@ static int _init_power_config(void)
 			       NULL, 10);
 	}
 
-	power_save_set_timeouts(&partition_suspend_time_set);
+	power_save_set_timeouts(&suspend_time_set);
 
 	if ((slurm_conf.suspend_time == INFINITE) &&
-	    !partition_suspend_time_set) { /* not an error */
+	    !suspend_time_set) { /* not an error */
 		debug("power_save module disabled, SuspendTime < 0");
 		return -1;
 	}
@@ -1160,7 +1155,8 @@ extern void power_save_init(void)
 	}
 	power_save_started = true;
 
-	slurm_thread_create(&power_thread, _power_save_thread, NULL);
+	slurm_thread_create("powersave", &power_thread, _power_save_thread,
+			    NULL);
 	slurm_mutex_unlock(&power_mutex);
 }
 
@@ -1216,12 +1212,6 @@ static void *_power_save_thread(void *arg)
 		NO_LOCK, WRITE_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK };
 	time_t now, last_power_scan = 0;
 
-#if HAVE_SYS_PRCTL_H
-	if (prctl(PR_SET_NAME, "powersave", NULL, NULL, NULL) < 0) {
-		error("%s: cannot set my name to %s %m", __func__, "powersave");
-	}
-#endif
-
 	/*
 	 * Build up resume_job_list list in case shut down before resuming
 	 * jobs/nodes without having to state save the list.
@@ -1268,7 +1258,7 @@ fini:
 	return NULL;
 }
 
-extern void power_save_set_timeouts(bool *partition_suspend_time_set)
+extern void power_save_set_timeouts(bool *suspend_time_set)
 {
 	node_record_t *node_ptr;
 
@@ -1278,21 +1268,24 @@ extern void power_save_set_timeouts(bool *partition_suspend_time_set)
 
 	/* Reset timeouts so new values can be calculated. */
 	for (int i = 0; (node_ptr = next_node(&i)); i++) {
-		node_ptr->suspend_time = NO_VAL;
+		node_ptr->suspend_time = node_ptr->config_ptr->suspend_time;
 		node_ptr->suspend_timeout = NO_VAL16;
 		node_ptr->resume_timeout = NO_VAL16;
 	}
 
 	/* Figure out per-partition options and push to node level. */
-	list_for_each(part_list, _set_partition_options,
-		      partition_suspend_time_set);
+	list_for_each(part_list, _set_partition_options, NULL);
 
-	/* Apply global options to node level if not set at partition level. */
+	/* Apply global options to node level if not set at partition or node level. */
 	for (int i = 0; (node_ptr = next_node(&i)); i++) {
 		node_ptr->suspend_time =
 			((node_ptr->suspend_time == NO_VAL) ?
 				slurm_conf.suspend_time :
 				node_ptr->suspend_time);
+		if (suspend_time_set &&
+		    (node_ptr->suspend_time != INFINITE) &&
+		    (node_ptr->suspend_time != NO_VAL))
+			*suspend_time_set = true;
 		node_ptr->suspend_timeout =
 			((node_ptr->suspend_timeout == NO_VAL16) ?
 				slurm_conf.suspend_timeout :
@@ -1301,6 +1294,9 @@ extern void power_save_set_timeouts(bool *partition_suspend_time_set)
 			((node_ptr->resume_timeout == NO_VAL16) ?
 				slurm_conf.resume_timeout :
 				node_ptr->resume_timeout);
+		debug5("Power save settings for '%s': SuspendTime=%u,SuspendTimeout=%u,ResumeTimeout=%u",
+		       node_ptr->name, node_ptr->suspend_time,
+		       node_ptr->suspend_timeout, node_ptr->resume_timeout);
 	}
 }
 

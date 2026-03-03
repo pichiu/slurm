@@ -41,6 +41,7 @@
 #include "slurm/slurmdb.h"
 
 #include "src/common/macros.h"
+#include "src/common/sercli.h"
 #include "src/common/slurm_time.h"
 #include "src/common/threadpool.h"
 #include "src/common/xstring.h"
@@ -499,7 +500,7 @@ static list_t *_query_fed_servers(slurmdb_federation_rec_t *fed,
 		load_args->node_info_msg_list = node_info_msg_list;
 		load_args->part_info_msg_list = part_info_msg_list;
 		load_args->resp_msg_list = resp_msg_list;
-		slurm_thread_create(&load_thread[pthread_count],
+		slurm_thread_create(NULL, &load_thread[pthread_count],
 				    _load_job_prio_thread, load_args);
 		pthread_count++;
 
@@ -644,7 +645,7 @@ static int _build_sinfo_data(list_t *sinfo_list,
 		sinfo_cnt++;
 		slurm_mutex_unlock(&sinfo_cnt_mutex);
 
-		slurm_thread_create_detached(_build_part_info,
+		slurm_thread_create_detached(NULL, _build_part_info,
 					     build_struct_ptr);
 	}
 

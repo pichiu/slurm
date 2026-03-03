@@ -42,6 +42,23 @@ case "$host" in
 			[Define slurm_ prefix function aliases for plugins]) ;;
 esac
 
+dnl Select ld emulation when invoking ld --format=binary directly.
+dnl FreeBSD's lld requires an explicit -m <emulation>; leave empty elsewhere.
+dnl Ensure configure substitutes into make_ref.include
+LD_EMULATION=""
+case "$host" in
+	x86_64-*-freebsd*)      LD_EMULATION="-m elf_amd64"    ;;
+	amd64-*-freebsd*)       LD_EMULATION="-m elf_amd64"    ;;
+	aarch64-*-freebsd*)     LD_EMULATION="-m aarch64elf"   ;;
+	powerpc64le-*-freebsd*) LD_EMULATION="-m elf64lppc"    ;;
+	powerpc64-*-freebsd*)   LD_EMULATION="-m elf64ppc"     ;;
+	riscv64-*-freebsd*)     LD_EMULATION="-m elf64lriscv"  ;;
+	*)                      LD_EMULATION=""                ;;
+esac
+AC_SUBST([LD_EMULATION])
+AC_MSG_CHECKING([ld emulation flag])
+AC_MSG_RESULT([$LD_EMULATION])
+
 dnl Checks for programs.
 dnl
 AC_PROG_CC
@@ -481,6 +498,9 @@ AC_CONFIG_FILES([Makefile
 		 src/plugins/hash/common_xkcp/Makefile
 		 src/plugins/hash/k12/Makefile
 		 src/plugins/hash/sha3/Makefile
+		 src/plugins/http_auth/Makefile
+		 src/plugins/http_auth/local/Makefile
+		 src/plugins/http_auth/jwt/Makefile
 		 src/plugins/http_parser/Makefile
 		 src/plugins/http_parser/libhttp_parser/Makefile
 		 src/plugins/job_submit/Makefile
@@ -557,6 +577,7 @@ AC_CONFIG_FILES([Makefile
 		 src/plugins/topology/block/Makefile
 		 src/plugins/topology/common/Makefile
 		 src/plugins/topology/flat/Makefile
+		 src/plugins/topology/ring/Makefile
 		 src/plugins/topology/tree/Makefile
 		 src/sacct/Makefile
 		 src/sackd/Makefile

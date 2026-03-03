@@ -253,3 +253,18 @@ extern int serialize_p_string_to_data(data_t **dest, const char *src,
 
 	return rc;
 }
+
+extern int serialize_p_dump(serialize_dump_state_t **state_ptr,
+			    data_parser_type_t type, void *src,
+			    ssize_t src_bytes, buf_t *dst,
+			    serializer_flags_t flags)
+{
+	return ESLURM_NOT_SUPPORTED;
+}
+
+extern int serialize_p_parse(serialize_parse_state_t **state_ptr,
+			     data_parser_type_t type, void *dst,
+			     ssize_t dst_bytes, const buf_t *src)
+{
+	return ESLURM_NOT_SUPPORTED;
+}

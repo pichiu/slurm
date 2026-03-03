@@ -49,63 +49,6 @@
 
 #include "src/interfaces/data_parser.h"
 
-typedef struct {
-	int rc;
-	list_t *errors;
-	list_t *warnings;
-	data_parser_t *parser;
-	const char *id; /* string identifying client (usually IP) */
-	void *db_conn;
-	http_request_method_t method;
-	data_t *parameters;
-	data_t *query;
-	data_t *resp;
-	data_t *parent_path;
-	int tag;
-} openapi_ctxt_t;
-
-/*
- * Callback from openapi caller.
- * RET SLURM_SUCCESS or error to kill the connection
- */
-typedef int (*openapi_ctxt_handler_t)(openapi_ctxt_t *ctxt);
-
-typedef enum {
-	OP_BIND_INVALID = 0,
-	OP_BIND_NONE = SLURM_BIT(1),
-	OP_BIND_DATA_PARSER = SLURM_BIT(2), /* populate {data_parser} in URL */
-	OP_BIND_OPENAPI_RESP_FMT = SLURM_BIT(3), /* populate errors,warnings,meta */
-	OP_BIND_HIDDEN_OAS = SLURM_BIT(4), /* Hide from OpenAPI specification */
-	OP_BIND_NO_SLURMDBD = SLURM_BIT(5), /* Do not prepare slurmdbd connection */
-	OP_BIND_REQUIRE_SLURMDBD = SLURM_BIT(6), /* Require slurmdbd connection or don't call path */
-	OP_BIND_INVALID_MAX = INFINITE16
-} op_bind_flags_t;
-
-typedef struct {
-	http_request_method_t method;
-	const char *const *tags;
-	const char *summary;
-	const char *description;
-	struct {
-		data_parser_type_t type;
-		const char *description;
-	} response;
-	data_parser_type_t parameters;
-	data_parser_type_t query;
-	struct {
-		data_parser_type_t type;
-		const char *description;
-		bool optional;
-	} body;
-} openapi_path_binding_method_t;
-
-typedef struct {
-	const char *path;
-	openapi_ctxt_handler_t callback;
-	const openapi_path_binding_method_t *methods;
-	op_bind_flags_t flags;
-} openapi_path_binding_t;
-
 /*
  * Register a given unique tag against a path binding.
  *

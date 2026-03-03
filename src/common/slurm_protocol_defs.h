@@ -340,8 +340,10 @@ typedef struct slurm_msg {
 	char *tls_cert; /* TLS certificate for server. Only needed when server's
 			 * cert is not already trusted (i.e. signed by a cert in
 			 * our trust store) */
-	void *conn; /* interfaces/conn data used for sending this message and
-		     * receiving a response */
+	conn_t *conn; /* interfaces/conn data used for sending this message
+		       * and receiving a response */
+	bool conn_is_mtls; /* True if the connection used to receive this message
+			    * used mTLS */
 
 	uint16_t msg_type; /* really a slurm_msg_type_t but needs to be
 			    * this way for packing purposes.  message type */
@@ -1090,6 +1092,7 @@ typedef struct suspend_int_msg {
 typedef struct ping_slurmd_resp_msg {
 	uint32_t cpu_load;	/* CPU load * 100 */
 	uint64_t free_mem;	/* Free memory in MiB */
+	char *node_name; /* Node name for who is answering that ping */
 } ping_slurmd_resp_msg_t;
 
 typedef struct license_info_request_msg {

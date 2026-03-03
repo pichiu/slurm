@@ -316,7 +316,7 @@ static void _on_sighup(conmgr_callback_args_t conmgr_args, void *arg)
 
 	info("Caught SIGHUP. Triggering reconfigure.");
 
-	slurm_thread_create_detached(_try_to_reconfig, NULL);
+	slurm_thread_create_detached(NULL, _try_to_reconfig, NULL);
 }
 
 static void _on_sigusr2(conmgr_callback_args_t conmgr_args, void *arg)
@@ -344,7 +344,7 @@ static void _on_sigpipe(conmgr_callback_args_t conmgr_args, void *arg)
 	info("Caught SIGPIPE. Ignoring.");
 }
 
-static probe_status_t _probe_listener(probe_log_t *log)
+static probe_status_t _probe_listener(probe_log_t *log, void *arg)
 {
 	probe_status_t status = PROBE_RC_UNKNOWN;
 
@@ -393,7 +393,7 @@ main (int argc, char **argv)
 	log_init(argv[0], lopts, LOG_DAEMON, NULL);
 
 	probe_init();
-	probe_register("rpc-listeners", _probe_listener);
+	probe_register("rpc-listeners", _probe_listener, NULL);
 
 	if (original) {
 		/*
@@ -553,7 +553,7 @@ main (int argc, char **argv)
 
 	record_launched_jobs();
 
-	slurm_thread_create_detached(_registration_engine, NULL);
+	slurm_thread_create_detached(NULL, _registration_engine, NULL);
 
 	/* Allow listening socket to start accept()ing incoming */
 	_unquiesce_fd_listener();
@@ -2040,7 +2040,7 @@ static void _try_service_msg(conmgr_callback_args_t conmgr_args, void *arg)
 		log_flag(NET, "%s: [%s] detaching new thread for RPC connection",
 			 __func__, conmgr_fd_get_name(conmgr_args.con));
 
-		slurm_thread_create_detached(_service_msg, args);
+		slurm_thread_create_detached(NULL, _service_msg, args);
 	} else {
 		xassert(rc == EWOULDBLOCK);
 
@@ -2070,7 +2070,7 @@ static void _try_service_msg(conmgr_callback_args_t conmgr_args, void *arg)
 	}
 }
 
-static void _on_extract_fd(conmgr_callback_args_t conmgr_args, void *conn,
+static void _on_extract_fd(conmgr_callback_args_t conmgr_args, conn_t *conn,
 			   void *arg)
 {
 	service_msg_args_t *args = NULL;

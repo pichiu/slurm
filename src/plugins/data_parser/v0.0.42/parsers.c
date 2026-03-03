@@ -8461,6 +8461,8 @@ static const parser_t PARSER_ARRAY(JOB_DESC_MSG)[] = {
 
 #define add_parse(mtype, field, path, desc) \
 	add_parser(update_node_msg_t, mtype, false, field, 0, path, desc)
+#define add_removed(mtype, path, desc, deprec) \
+	add_parser_removed(update_node_msg_t, mtype, false, path, desc, deprec)
 static const parser_t PARSER_ARRAY(UPDATE_NODE_MSG)[] = {
 	add_parse(STRING, comment, "comment", "Arbitrary comment"),
 	add_parse(UINT32, cpu_bind, "cpu_bind", "Default method for binding tasks to allocated CPUs"),
@@ -8473,11 +8475,12 @@ static const parser_t PARSER_ARRAY(UPDATE_NODE_MSG)[] = {
 	add_parse(HOSTLIST_STRING, node_names, "name", "NodeName"),
 	add_parse(NODE_STATES, node_state, "state", "New state to assign to the node"),
 	add_parse(STRING, reason, "reason", "Reason for node being DOWN or DRAINING"),
-	add_parse(USER_ID, reason_uid, "reason_uid", "User ID to associate with the reason (needed if user root is sending message)"),
+	add_removed(USER_ID, "reason_uid", "User ID to associate with the reason (needed if user root is sending message)", SLURM_26_05_PROTOCOL_VERSION),
 	add_parse(UINT32_NO_VAL, resume_after, "resume_after", "Number of seconds after which to automatically resume DOWN or DRAINED node"),
 	add_parse(UINT32_NO_VAL, weight, "weight", "Weight of the node for scheduling purposes"),
 };
 #undef add_parse
+#undef add_removed
 
 #define add_parse(mtype, field, path, desc) \
 	add_parser(openapi_resp_meta_t, mtype, false, field, 0, path, desc)

@@ -149,28 +149,62 @@ extern void tls_close(conmgr_callback_args_t conmgr_args, void *arg)
 	int rc = EINVAL;
 	buf_t *tls_in = NULL;
 	list_t *tls_out = NULL;
+	bool defer_close = false;
 
 	slurm_mutex_lock(&mgr.mutex);
 
 	xassert(con->tls);
 	xassert(con_flag(con, FLAG_TLS_CLIENT) ^
 		con_flag(con, FLAG_TLS_SERVER));
-	xassert(con->input_fd == -1);
-	xassert(con_flag(con, FLAG_READ_EOF));
 	xassert(!con_flag(con, FLAG_TLS_WAIT_ON_CLOSE));
 
 	tls = con->tls;
 
-	slurm_mutex_unlock(&mgr.mutex);
-
 	if (!tls) {
-		log_flag(CONMGR, "%s: [%s] closing TLS state skipped",
+		log_flag(CONMGR, "%s: [%s] TLS state doesn't exist, skip closing it",
 			 __func__, con->name);
+		slurm_mutex_unlock(&mgr.mutex);
 		return;
 	}
 
-	log_flag(CONMGR, "%s: [%s] closing via tls_g_destroy()",
+	if (con_flag(con, FLAG_READ_EOF)) {
+		log_flag(CONMGR, "%s: [%s] connection already closed, skipping TLS close",
+			 __func__, con->name);
+		slurm_mutex_unlock(&mgr.mutex);
+		goto destroy;
+	}
+
+	slurm_mutex_unlock(&mgr.mutex);
+
+	log_flag(CONMGR, "%s: [%s] attempting graceful TLS shutdown",
 		 __func__, con->name);
+
+	/*
+	 * Attempt to do TLS shutdown sequence. This may block on either
+	 * reading/writing data.
+	 */
+	rc = tls_g_shutdown_conn(tls);
+
+	if (rc == EWOULDBLOCK) {
+		log_flag(CONMGR, "%s: [%s] tls_g_shutdown_conn() requires more incoming data",
+			 __func__, con->name);
+
+		slurm_mutex_lock(&mgr.mutex);
+
+		/* Wait for more incoming data before trying again */
+		con_set_flag(con, FLAG_ON_DATA_TRIED);
+
+		slurm_mutex_unlock(&mgr.mutex);
+		return;
+	} else if (rc) {
+		log_flag(CONMGR, "%s: [%s] tls_g_shutdown_conn() failed: %s",
+			 __func__, con->name, slurm_strerror(rc));
+		_wait_close(false, con);
+		defer_close = true;
+	}
+
+destroy:
+	log_flag(CONMGR, "%s: [%s] TLS shutdown finished", __func__, con->name);
 
 	errno = SLURM_SUCCESS;
 	tls_g_destroy_conn(tls, false);
@@ -188,6 +222,9 @@ extern void tls_close(conmgr_callback_args_t conmgr_args, void *arg)
 
 	FREE_NULL_BUFFER(tls_in);
 	FREE_NULL_LIST(tls_out);
+
+	if (!defer_close)
+		conmgr_con_queue_close(conmgr_args.ref);
 }
 
 static int _recv(void *io_context, uint8_t *buf, uint32_t len)
@@ -303,9 +340,10 @@ again:
 		log_flag(NET, "%s: [%s] read EOF with %u bytes previously decrypted",
 			 __func__, con->name, get_buf_offset(buf));
 
+		/* Need to shutdown TLS layer before closing connection */
 		slurm_mutex_lock(&mgr.mutex);
-		/* lock to tell mgr that we are done */
-		con_set_flag(con, FLAG_READ_EOF);
+		con_set_flag(con, FLAG_IS_TLS_SHUTTING_DOWN);
+		add_work_con_fifo(true, con, tls_close, NULL);
 		slurm_mutex_unlock(&mgr.mutex);
 
 		return;
@@ -384,7 +422,7 @@ static void _negotiate(conmgr_fd_t *con, void *tls)
 		slurm_mutex_unlock(&mgr.mutex);
 		return;
 	} else if (rc) {
-		log_flag(CONMGR, "%s: [%s] tls_g_negotiate_tls() failed: %s",
+		log_flag(CONMGR, "%s: [%s] tls_g_negotiate_conn() failed: %s",
 				 __func__, con->name, slurm_strerror(rc));
 		_wait_close(false, con);
 		return;
@@ -423,6 +461,7 @@ extern void tls_create(conmgr_callback_args_t conmgr_args, void *arg)
 			.io_context = con,
 		},
 		.defer_negotiation = true,
+		.cert = con->tls_cert,
 	};
 	int rc = SLURM_ERROR;
 	void *tls = NULL;
@@ -559,6 +598,9 @@ extern void tls_create(conmgr_callback_args_t conmgr_args, void *arg)
 		con->tls = tls;
 		xassert(con->tls_in == tls_in);
 		xassert(con->tls_out == tls_out);
+
+		/* Release cert that is no longer needed */
+		xfree(con->tls_cert);
 
 		slurm_mutex_unlock(&mgr.mutex);
 
@@ -807,4 +849,11 @@ extern void tls_check_fingerprint(conmgr_callback_args_t conmgr_args, void *arg)
 
 		close_con(false, con);
 	}
+}
+
+extern bool tls_is_client_authenticated(conmgr_fd_t *con)
+{
+	xassert(con->tls);
+
+	return tls_g_is_client_authenticated(con->tls);
 }

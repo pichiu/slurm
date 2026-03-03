@@ -96,16 +96,6 @@ void job_desc_msg_destroy (job_desc_msg_t *j);
  */
 extern list_t *existing_allocation(void);
 
-/*
- * Create a job step given the job information stored in 'j'
- * After returning, 'j' is filled in with information for job step.
- * IN use_all_cpus - true to use every CPU allocated to the job
- * IN opt_local - options used to create job step
- *
- * Returns -1 if job step creation failure, 0 otherwise
- */
-int create_job_step(srun_job_t *j, bool use_all_cpus, slurm_opt_t *opt_local);
-
 /* set the job for debugging purpose */
 void set_allocate_job(srun_job_t *job);
 

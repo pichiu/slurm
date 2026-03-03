@@ -37,12 +37,14 @@
 
 #include "src/common/list.h"
 #include "src/common/log.h"
+#include "src/common/pack.h"
 #include "src/common/read_config.h"
 #include "src/common/timers.h"
 #include "src/common/xassert.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
 
+#include "src/interfaces/data_parser.h"
 #include "src/interfaces/serializer.h"
 
 /* Define slurm-specific aliases for use by plugins, see slurm_xlator.h. */
@@ -51,6 +53,8 @@ strong_alias(serialize_g_data_to_string, slurm_serialize_g_data_to_string);
 strong_alias(serialize_g_string_to_data, slurm_serialize_g_string_to_data);
 strong_alias(serializer_g_fini, slurm_serializer_g_fini);
 strong_alias(serializer_required, slurm_serializer_required);
+strong_alias(serialize_g_parse, slurm_serialize_g_parse);
+strong_alias(serialize_g_dump, slurm_serialize_g_dump);
 
 #define SERIALIZER_MAJOR_TYPE "serializer"
 #define SERIALIZER_MIME_TYPES_SYM "mime_types"
@@ -63,6 +67,12 @@ typedef struct {
 	int (*data_to_string)(char **dest, size_t *length, const data_t *src,
 			      serializer_flags_t flags);
 	int (*string_to_data)(data_t **dest, const char *src, size_t length);
+	int (*dump)(serialize_dump_state_t **state_ptr, data_parser_type_t type,
+		    void *src, ssize_t src_bytes, buf_t *dst,
+		    serializer_flags_t flags);
+	int (*parse)(serialize_parse_state_t **state_ptr,
+		     data_parser_type_t type, void *dst, ssize_t dst_bytes,
+		     const buf_t *src);
 } funcs_t;
 
 typedef struct {
@@ -76,6 +86,8 @@ static const char *syms[] = {
 	"serialize_p_fini",
 	"serialize_p_data_to_string",
 	"serialize_p_string_to_data",
+	"serialize_p_dump",
+	"serialize_p_parse",
 };
 
 /* serializer plugin state */
@@ -391,4 +403,62 @@ extern void serializer_g_fini(void)
 	FREE_NULL_PLUGINS(plugins);
 	slurm_mutex_unlock(&init_mutex);
 #endif
+}
+
+extern int serialize_g_parse(serialize_parse_state_t **state_ptr,
+			     data_parser_t *parser, data_parser_type_t type,
+			     void *dst, ssize_t dst_bytes, buf_t *src,
+			     const char *mime_type)
+{
+	DEF_TIMERS;
+	int rc = EINVAL;
+	const funcs_t *func_ptr = NULL;
+	plugin_mime_type_t *pmt = NULL;
+
+	xassert(dst);
+	xassert(dst_bytes > 0);
+	xassert(src);
+	xassert(src->magic == BUF_MAGIC);
+
+	pmt = _find_serializer(mime_type);
+	if (!pmt)
+		return ESLURM_DATA_UNKNOWN_MIME_TYPE;
+
+	xassert(pmt->magic == PMT_MAGIC);
+	func_ptr = plugins->functions[pmt->index];
+
+	START_TIMER;
+	rc = (*func_ptr->parse)(state_ptr, type, dst, dst_bytes, src);
+	END_TIMER2(__func__);
+
+	return rc;
+}
+
+extern int serialize_g_dump(serialize_dump_state_t **state_ptr,
+			    data_parser_t *parser, data_parser_type_t type,
+			    void *src, ssize_t src_bytes, buf_t *dst,
+			    const char *mime_type, serializer_flags_t flags)
+{
+	DEF_TIMERS;
+	int rc;
+	const funcs_t *func_ptr;
+	plugin_mime_type_t *pmt = NULL;
+
+	xassert(src);
+	xassert(src_bytes > 0);
+	xassert(dst);
+	xassert(dst->magic == BUF_MAGIC);
+
+	pmt = _find_serializer(mime_type);
+	if (!pmt)
+		return ESLURM_DATA_UNKNOWN_MIME_TYPE;
+
+	xassert(pmt->magic == PMT_MAGIC);
+	func_ptr = plugins->functions[pmt->index];
+
+	START_TIMER;
+	rc = (*func_ptr->dump)(state_ptr, type, src, src_bytes, dst, flags);
+	END_TIMER2(__func__);
+
+	return rc;
 }

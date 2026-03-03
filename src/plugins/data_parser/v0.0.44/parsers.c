@@ -7315,6 +7315,8 @@ static int PARSE_FUNC(NAMESPACE_NODE_CONF_COMPLEX)(const parser_t *const parser,
 		data_key_get_const(src, "clone_ns_script_wait");
 	ns_node_conf->set_clonensepilog_wait =
 		data_key_get_const(src, "clone_ns_epilog_wait");
+	ns_node_conf->set_disable_bpf_token =
+		data_key_get_const(src, "disable_bpf_token");
 	ns_node_conf->set_shared = data_key_get_const(src, "shared");
 
 	rc = PARSE(NAMESPACE_CONF_PTR, ns_node_conf->ns_conf, src, parent_path,
@@ -9538,6 +9540,8 @@ static const parser_t PARSER_ARRAY(JOB_DESC_MSG)[] = {
 
 #define add_parse(mtype, field, path, desc)				\
 	add_parser(update_node_msg_t, mtype, false, field, 0, path, desc)
+#define add_removed(mtype, path, desc, deprec) \
+	add_parser_removed(update_node_msg_t, mtype, false, path, desc, deprec)
 static const parser_t PARSER_ARRAY(UPDATE_NODE_MSG)[] = {
 	add_parse(STRING, comment, "comment", "Arbitrary comment"),
 	add_parse(UINT32, cpu_bind, "cpu_bind", "Default method for binding tasks to allocated CPUs"),
@@ -9550,12 +9554,13 @@ static const parser_t PARSER_ARRAY(UPDATE_NODE_MSG)[] = {
 	add_parse(HOSTLIST_STRING, node_names, "name", "NodeName"),
 	add_parse(NODE_STATES, node_state, "state", "New state to assign to the node"),
 	add_parse(STRING, reason, "reason", "Reason for node being DOWN or DRAINING"),
-	add_parse(USER_ID, reason_uid, "reason_uid", "User ID to associate with the reason (needed if user root is sending message)"),
+	add_removed(USER_ID, "reason_uid", "User ID to associate with the reason (needed if user root is sending message)", SLURM_26_05_PROTOCOL_VERSION),
 	add_parse(UINT32_NO_VAL, resume_after, "resume_after", "Number of seconds after which to automatically resume DOWN or DRAINED node"),
 	add_parse(STRING, topology_str, "topology_str", "Topology"),
 	add_parse(UINT32_NO_VAL, weight, "weight", "Weight of the node for scheduling purposes"),
 };
 #undef add_parse
+#undef add_removed
 
 #define add_parse(mtype, field, path, desc)				\
 	add_parser(openapi_resp_meta_t, mtype, false, field, 0, path, desc)
@@ -10601,6 +10606,7 @@ static const parser_t PARSER_ARRAY(NAMESPACE_CONF)[] = {
 	add_parse(UINT32, clonensscript_wait, "clone_ns_script_wait", "The number of seconds to wait for the clone_ns_script to complete before considering the script failed. The default value is 10 seconds."),
 	add_parse(UINT32, clonensepilog_wait, "clone_ns_epilog_wait", "The number of seconds to wait for the clone_ns_epilog to complete before considering the script failed. The default value is 10 seconds."),
 	add_parse(STRING, dirs, "dirs", "A list of mount points separated with commas to create private mounts for. This parameter is optional and if not specified it defaults to \"/tmp,/dev/shm\". NOTE: /dev/shm has special handling, and instead of a bind mount is always a fresh tmpfs filesystem. NOTE: When CLONE_NEWPID is specified, a unique /proc filesystem for the container will be mounted automatically."),
+	add_parse(BOOL, disable_bpf_token, "disable_bpf_token", "Specifying disable_bpf_token=true will remove the requirement for bpf tokens on systems that don't support them.  When set, it is possible that device constraints will only apply at the job level.  This parameter is optional."),
 	add_parse(STRING, initscript, "init_script", "Specify fully qualified pathname of an optional initialization script. This script is run before the namespace construction of a job. It can be used to make the job join additional namespaces prior to the construction of /tmp namespace or it can be used for any site-specific setup. This parameter is optional. "),
 	add_parse(BOOL, shared, "shared", "Specifying Shared=true will propagate new mounts between the job specific filesystem namespace and the root filesystem namespace, enable using autofs on the node. This parameter is optional. "),
 	add_parse(STRING, usernsscript, "user_ns_script", "Specifies the location of a script that will perform the user namespace setup. This script runs first when setting up the namespace. The environment variable \"SLURM_NS_PID\" is provided to allow constructing the path to the various map files that this script could write to. If not specified, every user and group will be mapped."),

@@ -46,6 +46,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/eventfd.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -82,6 +83,7 @@
 #include "src/srun/launch.h"
 #include "src/srun/multi_prog.h"
 #include "src/srun/opt.h"
+#include "src/srun/signals.h"
 #include "src/srun/srun_job.h"
 
 /*
@@ -113,22 +115,22 @@ typedef struct het_job_resp_struct {
 	uint32_t node_cnt;
 } het_job_resp_struct_t;
 
-
 static int shepherd_fd = -1;
-static pthread_t signal_thread = (pthread_t) 0;
-static int pty_sigarray[] = { SIGWINCH, 0 };
 
 extern char **environ;
+
+slurm_step_id_t pending_job_id = SLURM_STEP_ID_INITIALIZER;
+pthread_mutex_t pending_job_id_lock = PTHREAD_MUTEX_INITIALIZER;
+
+srun_job_t *srun_first_job = NULL;
+pthread_mutex_t srun_first_job_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /*
  * Prototypes:
  */
 
 static void _call_spank_fini(void);
-static int  _call_spank_local_user(srun_job_t *job, slurm_opt_t *opt_local);
-static long _diff_tv_str(struct timeval *tv1, struct timeval *tv2);
-static void _handle_intr(srun_job_t *job);
-static void _handle_pipe(void);
+static int _call_spank_local_user(srun_job_t *job, slurm_opt_t *opt_local);
 static srun_job_t *_job_create_structure(allocation_info_t *ainfo,
 					 slurm_opt_t *opt_local);
 static char *_normalize_hostlist(const char *hostlist);
@@ -146,7 +148,6 @@ static int  _set_umask_env(void);
 static void _shepherd_notify(int shepherd_fd);
 static int _shepherd_spawn(srun_job_t *job, list_t *srun_job_list,
 			   bool got_alloc);
-static void *_srun_signal_mgr(void *no_data);
 static void _srun_cli_filter_post_submit(uint32_t jobid, uint32_t stepid);
 static int  _validate_relative(resource_allocation_response_msg_t *resp,
 			       slurm_opt_t *opt_local);
@@ -674,8 +675,7 @@ static void _post_opts(list_t *opt_list)
 		list_sort(opt_list, _sort_by_offset);
 }
 
-extern void init_srun(int argc, char **argv, log_options_t *logopt,
-		      bool handle_signals)
+extern void init_srun(int argc, char **argv, log_options_t *logopt)
 {
 	bool het_job_fini = false;
 	int i, het_job_argc, het_job_argc_off;
@@ -685,11 +685,7 @@ extern void init_srun(int argc, char **argv, log_options_t *logopt,
 	 * This must happen before we spawn any threads
 	 * which are not designed to handle arbitrary signals
 	 */
-	if (handle_signals) {
-		if (xsignal_block(sig_array) < 0)
-			error("Unable to block signals");
-	}
-	xsignal_block(pty_sigarray);
+	srun_sig_init();
 
 	/*
 	 * Initialize plugin stack, read options from plugins, etc.
@@ -865,7 +861,7 @@ end_it:
 
 /*
  * Create the job step(s). For a heterogeneous job, each step is requested in
- * a separate RPC. create_job_step() references "opt", so we need to match up
+ * a separate RPC. launch_create_job_step() references "opt", so we need to match up
  * the job allocation request with its requested options.
  */
 static int _create_job_step(srun_job_t *job, bool use_all_cpus,
@@ -935,15 +931,15 @@ static int _create_job_step(srun_job_t *job, bool use_all_cpus,
 			    SLURM_SUCCESS)
 				break;
 
-			rc = create_job_step(job, use_all_cpus, opt_local);
+			rc = launch_create_job_step(job, use_all_cpus,
+						    opt_local);
 			if (rc < 0)
 				break;
 			if (step_id == NO_VAL)
 				step_id = job->step_id.step_id;
 			if (exclude_hl) {
 				slurm_step_layout_t *step_layout =
-					launch_common_get_slurm_step_layout(
-						job);
+					launch_get_slurm_step_layout(job);
 				hostlist_push(exclude_hl,
 					      step_layout->node_list);
 			}
@@ -1025,7 +1021,7 @@ static int _create_job_step(srun_job_t *job, bool use_all_cpus,
 			job->het_job_ntasks = job->ntasks;
 			job->het_job_task_offset = 0;
 		}
-		if ((rc = create_job_step(job, use_all_cpus, &opt)) < 0)
+		if ((rc = launch_create_job_step(job, use_all_cpus, &opt)) < 0)
 			return rc;
 
 		if (het_job_id) {
@@ -1246,7 +1242,7 @@ extern void create_srun_job(void **p_job, bool *got_alloc)
 			error("Job creation failure.");
 			exit(error_exit);
 		}
-		if (create_job_step(job, false, &opt) < 0)
+		if (launch_create_job_step(job, false, &opt) < 0)
 			exit(error_exit);
 	} else if ((job_resp_list = existing_allocation())) {
 		slurm_opt_t *opt_local;
@@ -1554,8 +1550,11 @@ extern void create_srun_job(void **p_job, bool *got_alloc)
 
 extern void pre_launch_srun_job(srun_job_t *job, slurm_opt_t *opt_local)
 {
-	if (!signal_thread)
-		slurm_thread_create(&signal_thread, _srun_signal_mgr, job);
+	slurm_mutex_lock(&srun_first_job_lock);
+	if (!srun_first_job) {
+		srun_first_job = job;
+	}
+	slurm_mutex_unlock(&srun_first_job_lock);
 
 	_run_srun_prolog(job);
 	if (_call_spank_local_user(job, opt_local)) {
@@ -1573,18 +1572,12 @@ extern void fini_srun(srun_job_t *job, bool got_alloc, uint32_t *global_rc)
 		cleanup_allocation();
 
 		/* Tell slurmctld that we were cancelled */
-		if (job->state >= SRUN_JOB_CANCELLED)
+		if (srun_job_state(job) >= SRUN_JOB_CANCELLED)
 			slurm_complete_job(&job->step_id, NO_VAL);
 		else
 			slurm_complete_job(&job->step_id, *global_rc);
 	}
 	_shepherd_notify(shepherd_fd);
-
-	if (signal_thread) {
-		srun_shutdown = true;
-		pthread_kill(signal_thread, SIGINT);
-		slurm_thread_join(signal_thread);
-	}
 
 	_run_srun_epilog(job);
 
@@ -1611,8 +1604,7 @@ update_job_state(srun_job_t *job, srun_job_state_t state)
 	return;
 }
 
-srun_job_state_t
-job_state(srun_job_t *job)
+extern srun_job_state_t srun_job_state(srun_job_t *job)
 {
 	srun_job_state_t state;
 	slurm_mutex_lock(&job->state_mutex);
@@ -1632,7 +1624,7 @@ job_force_termination(srun_job_t *job)
 		info("forcing job termination");
 		/* Send SIGKILL to tasks directly */
 		update_job_state(job, SRUN_JOB_CANCELLED);
-		launch_g_fwd_signal(SIGKILL);
+		launch_fwd_signal(SIGKILL);
 	} else {
 		time_t now = time(NULL);
 		if (last_msg != now) {
@@ -1783,56 +1775,11 @@ static int _call_spank_local_user(srun_job_t *job, slurm_opt_t *opt_local)
 	info->gid	= opt_local->gid;
 	info->jobid	= job->step_id.job_id;
 	info->stepid	= job->step_id.step_id;
-	info->step_layout = launch_common_get_slurm_step_layout(job);
+	info->step_layout = launch_get_slurm_step_layout(job);
 	info->uid	= opt_local->uid;
 
 	return spank_local_user(info);
 }
-
-/* Return the number of microseconds between tv1 and tv2 with a maximum
- * a maximum value of 10,000,000 to prevent overflows */
-static long _diff_tv_str(struct timeval *tv1, struct timeval *tv2)
-{
-	long delta_t;
-
-	delta_t  = MIN((tv2->tv_sec - tv1->tv_sec), 10);
-	delta_t *= USEC_IN_SEC;
-	delta_t +=  tv2->tv_usec - tv1->tv_usec;
-	return delta_t;
-}
-
-static void _handle_intr(srun_job_t *job)
-{
-	static struct timeval last_intr = { 0, 0 };
-	struct timeval now;
-
-	gettimeofday(&now, NULL);
-	if (sropt.quit_on_intr || _diff_tv_str(&last_intr, &now) < 1000000) {
-		info("sending Ctrl-C to %ps", &job->step_id);
-		launch_g_fwd_signal(SIGINT);
-		job_force_termination(job);
-	} else {
-		if (sropt.disable_status) {
-			info("sending Ctrl-C to %ps", &job->step_id);
-			launch_g_fwd_signal(SIGINT);
-		} else if (job->state < SRUN_JOB_CANCELLED) {
-			info("interrupt (one more within 1 sec to abort)");
-			launch_g_print_status();
-		}
-		last_intr = now;
-	}
-}
-
-static void _handle_pipe(void)
-{
-	static int ending = 0;
-
-	if (ending)
-		return;
-	ending = 1;
-	launch_g_fwd_signal(SIGKILL);
-}
-
 
 static void _print_job_information(resource_allocation_response_msg_t *resp)
 {
@@ -2230,59 +2177,6 @@ static int _shepherd_spawn(srun_job_t *job, list_t *srun_job_list,
 
 	_exit(0);
 	return -1;
-}
-
-/* _srun_signal_mgr - Process daemon-wide signals */
-static void *_srun_signal_mgr(void *job_ptr)
-{
-	int sig;
-	int i, rc;
-	sigset_t set;
-	srun_job_t *job = (srun_job_t *)job_ptr;
-
-	/* Make sure no required signals are ignored (possibly inherited) */
-	for (i = 0; sig_array[i]; i++)
-		xsignal_default(sig_array[i]);
-	while (!srun_shutdown) {
-		xsignal_sigset_create(sig_array, &set);
-		rc = sigwait(&set, &sig);
-		if (rc == EINTR)
-			continue;
-		switch (sig) {
-		case SIGINT:
-			if (!srun_shutdown)
-				_handle_intr(job);
-			break;
-		case SIGQUIT:
-			info("Quit");
-			/* continue with slurm_step_launch_abort */
-		case SIGTERM:
-		case SIGHUP:
-			/* No need to call job_force_termination here since we
-			 * are ending the job now and we don't need to update
-			 * the state. */
-			info("forcing job termination");
-			launch_g_fwd_signal(SIGKILL);
-			break;
-		case SIGCONT:
-			info("got SIGCONT");
-			break;
-		case SIGPIPE:
-			_handle_pipe();
-			break;
-		case SIGALRM:
-			if (srun_max_timer) {
-				info("First task exited %ds ago", sropt.max_wait);
-				launch_g_print_status();
-				launch_g_step_terminate();
-			}
-			break;
-		default:
-			launch_g_fwd_signal(sig);
-			break;
-		}
-	}
-	return NULL;
 }
 
 static int _validate_relative(resource_allocation_response_msg_t *resp,

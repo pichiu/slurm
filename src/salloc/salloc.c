@@ -357,13 +357,13 @@ int main(int argc, char **argv)
 		if (job_req_list) {
 			is_het_job = true;
 			job_resp_list = slurm_allocate_het_job_blocking(
-					job_req_list, opt.immediate,
-					_pending_callback);
+				job_req_list, opt.immediate, _pending_callback,
+				-1);
 			if (job_resp_list)
 				break;
 		} else {
-			alloc = slurm_allocate_resources_blocking(desc,
-					opt.immediate, _pending_callback);
+			alloc = slurm_allocate_resources_blocking(
+				desc, opt.immediate, _pending_callback, -1);
 			if (alloc)
 				break;
 		}

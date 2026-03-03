@@ -1139,15 +1139,11 @@ static void _x11_signal_handler(conmgr_callback_args_t conmgr_args, void *ignore
 
 	debug("Terminate signal (SIGTERM) received");
 
-	if (!_need_join_container()) {
-		_shutdown_x11_forward();
-		return;
-	}
 	if ((cpid = fork()) == 0) {
-		if (namespace_g_join(&step->step_id, step->uid, false) !=
-		    SLURM_SUCCESS) {
-			error("%s: cannot join container",
-			      __func__);
+		if ((_need_join_container()) &&
+		    (namespace_g_join(&step->step_id, step->uid, false) !=
+		     SLURM_SUCCESS)) {
+			error("%s: cannot join namespace", __func__);
 			_exit(1);
 		}
 		_shutdown_x11_forward();
@@ -1521,7 +1517,8 @@ x11_fail:
 	auth_context_unlock();
 
 fail1:
-	conmgr_add_work_fifo(_x11_signal_handler, NULL);
+	if (step->x11)
+		conmgr_add_work_fifo(_x11_signal_handler, NULL);
 
 	debug2("%s: Before call to spank_fini()", __func__);
 	if (spank_fini(step))

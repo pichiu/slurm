@@ -37,9 +37,13 @@
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
-#include "scontrol.h"
-#include "src/interfaces/data_parser.h"
 #include <arpa/inet.h>
+
+#include "src/common/sercli.h"
+
+#include "src/interfaces/data_parser.h"
+
+#include "scontrol.h"
 
 extern void scontrol_getaddrs(char *node_list)
 {
@@ -334,6 +338,7 @@ extern void scontrol_print_topo(int argc, char **argv)
 			node_list = val;
 		} else if (!xstrncasecmp(tag, "switch", MAX(tag_len, 1)) ||
 			   !xstrncasecmp(tag, "block", MAX(tag_len, 1)) ||
+			   !xstrncasecmp(tag, "ring", MAX(tag_len, 1)) ||
 			   !xstrncasecmp(tag, "unit", MAX(tag_len, 1))) {
 			unit = val;
 		} else {

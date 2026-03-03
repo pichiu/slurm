@@ -39,10 +39,6 @@
 
 #include "config.h"
 
-#if HAVE_SYS_PRCTL_H
-#  include <sys/prctl.h>
-#endif
-
 #include <pthread.h>
 
 #include "src/common/log.h"
@@ -180,7 +176,7 @@ static void _probe_verbose(probe_log_t *log)
 	probe_log(log, "StateSave Histogram: %s", histogram);
 }
 
-static probe_status_t _probe(probe_log_t *log)
+static probe_status_t _probe(probe_log_t *log, void *arg)
 {
 	probe_status_t status = PROBE_RC_UNKNOWN;
 
@@ -189,7 +185,7 @@ static probe_status_t _probe(probe_log_t *log)
 	if (log)
 		_probe_verbose(log);
 
-	if (!last_save.tv_sec)
+	if (!last_save.tv_sec && save_start.tv_sec)
 		status = PROBE_RC_ONLINE;
 	else
 		status = PROBE_RC_READY;
@@ -211,13 +207,7 @@ extern void *slurmctld_state_save(void *no_data)
 	bool run_save;
 	int save_count;
 
-#if HAVE_SYS_PRCTL_H
-	if (prctl(PR_SET_NAME, "sstate", NULL, NULL, NULL) < 0) {
-		error("%s: cannot set my name to %s %m", __func__, "sstate");
-	}
-#endif
-
-	probe_register(__func__, _probe);
+	probe_register(__func__, _probe, NULL);
 
 	while (1) {
 		/* wait for work to perform */

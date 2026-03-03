@@ -50,8 +50,9 @@ following:</p>
   <li><b>ResumeTimeout</b> and <b>SuspendTimeout</b> must be defined, either
   globally or on at least one partition.</li>
 
-  <li><b>SuspendTime</b> must be defined, either globally or on at least one
-  partition, and not be <i>INFINITE</i> or <i>-1</i>.</li>
+  <li><b>SuspendTime</b> must be defined, either globally, on at least one
+  partition, or on at least one node, and not be <i>INFINITE</i> or
+  <i>-1</i>.</li>
 
   <li><b>ResumeRate</b> and <b>SuspendRate</b> must be greater than or equal
   to <i>0</i>.</li>
@@ -437,6 +438,21 @@ SLURM_RESUME_FILE=/proc/1647372/fd/7:
     <i>CLOUD</i>.</p>
   </dd>
 
+  <dt id="SuspendTime_node"><b>SuspendTime</b><a class="slurm_link" href=
+  "#SuspendTime_node"></a>
+  </dt>
+
+  <dd>
+    <p>Nodes which remain idle or down for this number of seconds will be
+    placed into power saving mode by <b>SuspendProgram</b>.</p>
+
+    <p>This value takes precedence over the partition-level and global
+    <b>SuspendTime</b> settings for the specified nodes. If not set on the
+    node, the partition and then global values are used. Setting
+    <b>SuspendTime</b> to <i>INFINITE</i> will disable suspending of these
+    nodes.</p>
+  </dd>
+
   <dt id="Weight"><b>Weight</b><a class="slurm_link" href="#Weight"></a>
   </dt>
 
@@ -512,9 +528,10 @@ SLURM_RESUME_FILE=/proc/1647372/fd/7:
 
     <p>For nodes that are in multiple partitions with this option set, the
     highest time will take effect. If not set on any partition, the node will
-    use the <b>SuspendTime</b> value set for the entire cluster. Setting
-    <b>SuspendTime</b> to <i>INFINITE</i> will disable suspending of nodes in
-    this partition.</p>
+    use the <b>SuspendTime</b> value set for the entire cluster. A
+    <b>SuspendTime</b> value set on a <b>NodeName</b> line takes precedence
+    over this partition-level value. Setting <b>SuspendTime</b> to
+    <i>INFINITE</i> will disable suspending of nodes in this partition.</p>
   </dd>
 
   <dt id="SuspendTimeout_1"><b>SuspendTimeout</b><a class="slurm_link" href=

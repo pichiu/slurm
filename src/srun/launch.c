@@ -44,6 +44,7 @@
 #include "src/srun/fname.h"
 #include "src/srun/launch.h"
 #include "src/srun/multi_prog.h"
+#include "src/srun/signals.h"
 #include "src/srun/task_state.h"
 
 #include "src/api/pmi_server.h"
@@ -139,7 +140,7 @@ static char *_task_ids_to_host_list(int ntasks, uint32_t *taskids,
 	char *hosts;
 	slurm_step_layout_t *sl;
 
-	if ((sl = launch_common_get_slurm_step_layout(my_srun_job)) == NULL)
+	if ((sl = launch_get_slurm_step_layout(my_srun_job)) == NULL)
 		return (xstrdup("Unknown"));
 
 	/*
@@ -228,7 +229,9 @@ static void _setup_max_wait_timer(void)
 	 */
 	verbose("First task exited. Terminating job in %ds",
 		opt_save->srun_opt->max_wait);
+	slurm_mutex_lock(&srun_max_timer_lock);
 	srun_max_timer = true;
+	slurm_mutex_unlock(&srun_max_timer_lock);
 	alarm(opt_save->srun_opt->max_wait);
 }
 
@@ -395,7 +398,7 @@ static void _task_finish(task_exit_msg_t *msg)
 		}
 
 	} else if (WIFSIGNALED(msg->return_code)) {
-		if (my_srun_job->state >= SRUN_JOB_CANCELLED) {
+		if (srun_job_state(my_srun_job) >= SRUN_JOB_CANCELLED) {
 			if (get_log_level() >= LOG_LEVEL_VERBOSE)
 				build_task_string = true;
 		} else {
@@ -442,11 +445,10 @@ static void _task_finish(task_exit_msg_t *msg)
 		if (WCOREDUMP(msg->return_code))
 			core_str = " (core dumped)";
 #endif
-		if (my_srun_job->state >= SRUN_JOB_CANCELLED) {
+		if (srun_job_state(my_srun_job) >= SRUN_JOB_CANCELLED) {
 			verbose("%s: %s %s: %s%s",
 				hosts, task_str, tasks, signal_str, core_str);
-		} else if ((reduce_task_exit_msg == 0) ||
-			   (msg_printed == 0) ||
+		} else if ((reduce_task_exit_msg == 0) || (msg_printed == 0) ||
 			   (msg->return_code != last_task_exit_rc)) {
 			error("%s: %s %s: %s%s",
 			      hosts, task_str, tasks, signal_str, core_str);
@@ -634,7 +636,7 @@ extern int location_fini(void)
 	return SLURM_SUCCESS;
 }
 
-extern slurm_step_layout_t *launch_common_get_slurm_step_layout(srun_job_t *job)
+extern slurm_step_layout_t *launch_get_slurm_step_layout(srun_job_t *job)
 {
 	return (!job || !job->step_ctx) ?
 		NULL : job->step_ctx->step_resp->step_layout;
@@ -1016,9 +1018,8 @@ static job_step_create_request_msg_t *_create_job_step_create_request(
 	return step_req;
 }
 
-extern void launch_common_set_stdio_fds(srun_job_t *job,
-					slurm_step_io_fds_t *cio_fds,
-					slurm_opt_t *opt_local)
+extern void launch_set_stdio_fds(srun_job_t *job, slurm_step_io_fds_t *cio_fds,
+				 slurm_opt_t *opt_local)
 {
 	bool err_shares_out = false;
 	int file_flags;
@@ -1053,7 +1054,7 @@ extern void launch_common_set_stdio_fds(srun_job_t *job,
 		if (job->ifname->type == IO_ONE) {
 			cio_fds->input.taskid = job->ifname->taskid;
 			cio_fds->input.nodeid = slurm_step_layout_host_id(
-				launch_common_get_slurm_step_layout(job),
+				launch_get_slurm_step_layout(job),
 				job->ifname->taskid);
 		}
 	}
@@ -1117,7 +1118,7 @@ extern void launch_common_set_stdio_fds(srun_job_t *job,
  * Return TRUE if the job step create request should be retried later
  * (i.e. the errno set by step_ctx_create_timeout() is recoverable).
  */
-extern bool launch_common_step_retry_errno(int rc)
+extern bool launch_step_retry_errno(int rc)
 {
 	if ((rc == EAGAIN) ||
 	    (rc == ESLURM_DISABLED) ||
@@ -1128,7 +1129,7 @@ extern bool launch_common_step_retry_errno(int rc)
 	return false;
 }
 
-extern int launch_g_setup_srun_opt(char **rest, slurm_opt_t *opt_local)
+extern int launch_setup_srun_opt(char **rest, slurm_opt_t *opt_local)
 {
 	srun_opt_t *srun_opt = opt_local->srun_opt;
 	xassert(srun_opt);
@@ -1144,8 +1145,8 @@ extern int launch_g_setup_srun_opt(char **rest, slurm_opt_t *opt_local)
 	return SLURM_SUCCESS;
 }
 
-extern int launch_g_handle_multi_prog_verify(int command_pos,
-					     slurm_opt_t *opt_local)
+extern int launch_handle_multi_prog_verify(int command_pos,
+					   slurm_opt_t *opt_local)
 {
 	srun_opt_t *srun_opt = opt_local->srun_opt;
 	xassert(srun_opt);
@@ -1163,22 +1164,21 @@ extern int launch_g_handle_multi_prog_verify(int command_pos,
 		return 0;
 }
 
-extern int launch_g_create_job_step(srun_job_t *job, bool use_all_cpus,
-				    void (*signal_function)(int),
-				    sig_atomic_t *destroy_job,
-				    slurm_opt_t *opt_local)
+extern int launch_create_job_step(srun_job_t *job, bool use_all_cpus,
+				  slurm_opt_t *opt_local)
 {
 	srun_opt_t *srun_opt = opt_local->srun_opt;
-	int i, j, rc;
+	int i, rc;
 	unsigned long step_wait = 0;
 	uint16_t slurmctld_timeout;
 	slurm_step_layout_t *step_layout;
 	job_step_create_request_msg_t *step_req;
+	int tmp_srun_destroy_sig;
 
 	xassert(srun_opt);
 
 	if (!job) {
-		error("launch_common_create_job_step: no job given");
+		error("launch_create_job_step: no job given");
 		return SLURM_ERROR;
 	}
 
@@ -1214,8 +1214,16 @@ extern int launch_g_create_job_step(srun_job_t *job, bool use_all_cpus,
 	      step_req->cpu_count, step_req->num_tasks,
 	      step_req->name, step_req->relative);
 
-	for (i = 0; (!(*destroy_job)); i++) {
+	for (i = 0;; i++) {
 		bool timed_out = false;
+
+		slurm_mutex_lock(&srun_destroy_sig_lock);
+		tmp_srun_destroy_sig = srun_destroy_sig;
+		slurm_mutex_unlock(&srun_destroy_sig_lock);
+
+		if (tmp_srun_destroy_sig)
+			break;
+
 		if (srun_opt->no_alloc) {
 			if (step_req->num_tasks == NO_VAL) {
 				step_req->num_tasks = job->ntasks;
@@ -1254,7 +1262,7 @@ extern int launch_g_create_job_step(srun_job_t *job, bool use_all_cpus,
 		      (difftime(time(NULL), srun_begin_time) >=
 		       opt_local->immediate))) ||
 		    ((rc != ESLURM_PROLOG_RUNNING) &&
-		     !launch_common_step_retry_errno(rc))) {
+		     !launch_step_retry_errno(rc))) {
 			error("Unable to create step for job %u: %m",
 			      step_req->step_id.job_id);
 			slurm_free_job_step_create_request_msg(step_req);
@@ -1275,9 +1283,6 @@ extern int launch_g_create_job_step(srun_job_t *job, bool use_all_cpus,
 					verbose("Step completed in JobId=%u, retrying",
 						step_req->step_id.job_id);
 			}
-			xsignal_unblock(sig_array);
-			for (j = 0; sig_array[j]; j++)
-				xsignal(sig_array[j], signal_function);
 		} else {
 			if (rc == ESLURM_PROLOG_RUNNING)
 				verbose("Job %u step creation still disabled, retrying (%s)",
@@ -1294,14 +1299,21 @@ extern int launch_g_create_job_step(srun_job_t *job, bool use_all_cpus,
 			}
 		}
 
-		if (*destroy_job) {
+		slurm_mutex_lock(&srun_destroy_sig_lock);
+		tmp_srun_destroy_sig = srun_destroy_sig;
+		slurm_mutex_unlock(&srun_destroy_sig_lock);
+
+		if (tmp_srun_destroy_sig) {
 			/* cancelled by signal */
 			break;
 		}
 	}
 	if (i > 0) {
-		xsignal_block(sig_array);
-		if (*destroy_job) {
+		slurm_mutex_lock(&srun_destroy_sig_lock);
+		tmp_srun_destroy_sig = srun_destroy_sig;
+		slurm_mutex_unlock(&srun_destroy_sig_lock);
+
+		if (tmp_srun_destroy_sig) {
 			info("Cancelled pending step for job %u",
 			     step_req->step_id.job_id);
 			slurm_free_job_step_create_request_msg(step_req);
@@ -1312,7 +1324,7 @@ extern int launch_g_create_job_step(srun_job_t *job, bool use_all_cpus,
 	job->step_id.job_id = step_req->step_id.job_id;
 	job->step_id.step_id = step_req->step_id.step_id;
 
-	step_layout = launch_common_get_slurm_step_layout(job);
+	step_layout = launch_get_slurm_step_layout(job);
 	if (!step_layout) {
 		info("No step_layout given for pending step for job %u",
 		     step_req->step_id.job_id);
@@ -1347,10 +1359,10 @@ extern int launch_g_create_job_step(srun_job_t *job, bool use_all_cpus,
 	return SLURM_SUCCESS;
 }
 
-extern int launch_g_step_launch(srun_job_t *job, slurm_step_io_fds_t *cio_fds,
-				uint32_t *global_rc,
-				slurm_step_launch_callbacks_t *step_callbacks,
-				slurm_opt_t *opt_local)
+extern int launch_step_launch(srun_job_t *job, slurm_step_io_fds_t *cio_fds,
+			      uint32_t *global_rc,
+			      slurm_step_launch_callbacks_t *step_callbacks,
+			      slurm_opt_t *opt_local)
 {
 	srun_job_t *local_srun_job;
 	srun_opt_t *srun_opt = opt_local->srun_opt;
@@ -1481,9 +1493,9 @@ extern int launch_g_step_launch(srun_job_t *job, slurm_step_io_fds_t *cio_fds,
 	 * 1 for each task which could be confusing since no real
 	 * error happened.
 	 */
-	if (!launch_params.multi_prog
-	    || (!callbacks.step_signal
-		|| (callbacks.step_signal == launch_g_fwd_signal))) {
+	if (!launch_params.multi_prog ||
+	    (!callbacks.step_signal ||
+	     (callbacks.step_signal == launch_fwd_signal))) {
 		callbacks.task_finish = _task_finish;
 		slurm_mutex_lock(&launch_lock);
 		if (!opt_save) {
@@ -1555,8 +1567,8 @@ cleanup:
 	return rc;
 }
 
-extern int launch_g_step_wait(srun_job_t *job, bool got_alloc,
-			      slurm_opt_t *opt_local)
+extern int launch_step_wait(srun_job_t *job, bool got_alloc,
+			    slurm_opt_t *opt_local)
 {
 	int rc = 0;
 
@@ -1564,12 +1576,17 @@ extern int launch_g_step_wait(srun_job_t *job, bool got_alloc,
 	if ((MPIR_being_debugged == 0) && retry_step_begin &&
 	    (retry_step_cnt < MAX_STEP_RETRIES) &&
 	     (job->het_job_id == NO_VAL)) {	/* Not hetjob step */
+
+		slurm_mutex_lock(&srun_sig_forward_lock);
+		srun_sig_forward = false;
+		slurm_mutex_unlock(&srun_sig_forward_lock);
+
 		retry_step_begin = false;
 		step_ctx_destroy(job->step_ctx);
 		if (got_alloc)
-			rc = create_job_step(job, true, opt_local);
+			rc = launch_create_job_step(job, true, opt_local);
 		else
-			rc = create_job_step(job, false, opt_local);
+			rc = launch_create_job_step(job, false, opt_local);
 		if (rc < 0)
 			exit(error_exit);
 		rc = -1;
@@ -1577,17 +1594,17 @@ extern int launch_g_step_wait(srun_job_t *job, bool got_alloc,
 	return rc;
 }
 
-extern int launch_g_step_terminate(void)
+extern int launch_step_terminate(void)
 {
 	return _step_signal(SIGKILL);
 }
 
-extern void launch_g_print_status(void)
+extern void launch_print_status(void)
 {
 	task_state_print(task_state_list, (log_f)slurm_info);
 }
 
-extern void launch_g_fwd_signal(int signal)
+extern void launch_fwd_signal(int signal)
 {
 	srun_job_t *my_srun_job;
 	list_itr_t *iter;

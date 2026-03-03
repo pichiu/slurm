@@ -1284,6 +1284,7 @@ enum topology_plugin_type {
 	TOPOLOGY_PLUGIN_3DTORUS = 101,
 	TOPOLOGY_PLUGIN_TREE = 102,
 	TOPOLOGY_PLUGIN_BLOCK = 103,
+	TOPOLOGY_PLUGIN_RING = 104,
 };
 
 /*****************************************************************************\
@@ -3066,7 +3067,7 @@ typedef struct {
 	uint32_t job_comp_port;	/* job completion storage port */
 	char *job_comp_type;	/* job completion storage type */
 	char *job_comp_user;	/* job completion storage user */
-	char *namespace_plugin; /* job container plugin type */
+	char *namespace_plugin; /* namespace plugin type */
 	list_t *job_defaults_list; /* list of job_defaults_t elements */
 	uint16_t job_file_append; /* if set, append to stdout/err file */
 	uint16_t job_requeue;	/* If set, jobs get requeued on node failure */
@@ -3287,8 +3288,6 @@ typedef struct slurm_update_node_msg {
 	char *node_names;	/* nodelist expression */
 	uint32_t node_state;	/* see enum node_states */
 	char *reason;		/* reason for node being DOWN or DRAINING */
-	uint32_t reason_uid;	/* user ID of sending (needed if user
-				 * root is sending message) */
 	uint32_t resume_after;	/* automatically resume DOWN or DRAINED node
 				 * after this amount of seconds */
 	char *topology_str; /* new topology address string */
@@ -3565,6 +3564,8 @@ extern int slurm_allocate_resources(job_desc_msg_t *job_desc_msg,
  *      the controller will put the job in the PENDING state.  If
  *      pending callback is not NULL, it will be called with the job_id
  *      of the pending job as the sole parameter.
+ * IN interrupt_fd - If data can be read from this fd (POLLIN), then this
+ *	function will immediately stop blocking and return.
  *
  * RET allocation structure on success, NULL on error set errno to
  *	indicate the error (errno will be ETIMEDOUT if the timeout is reached
@@ -3573,7 +3574,7 @@ extern int slurm_allocate_resources(job_desc_msg_t *job_desc_msg,
  */
 extern resource_allocation_response_msg_t *slurm_allocate_resources_blocking(
 	const job_desc_msg_t *user_req, time_t timeout,
-	void (*pending_callback)(slurm_step_id_t *step_id));
+	void (*pending_callback)(slurm_step_id_t *step_id), int interrupt_fd);
 
 /*
  * slurm_free_resource_allocation_response_msg - free slurm resource
@@ -3596,6 +3597,8 @@ extern void slurm_free_resource_allocation_response_msg(resource_allocation_resp
  *      the controller will put the job in the PENDING state.  If
  *      pending callback is not NULL, it will be called with the job_id
  *      of the pending job as the sole parameter.
+ * IN interrupt_fd - If data can be read from this fd (POLLIN), then this
+ *	function will immediately stop blocking and return.
  *
  * RET list of allocation structures on success, NULL on error set errno to
  *	indicate the error (errno will be ETIMEDOUT if the timeout is reached
@@ -3604,7 +3607,7 @@ extern void slurm_free_resource_allocation_response_msg(resource_allocation_resp
  */
 extern list_t *slurm_allocate_het_job_blocking(
 	list_t *job_req_list, time_t timeout,
-	void (*pending_callback)(slurm_step_id_t *step_id));
+	void (*pending_callback)(slurm_step_id_t *step_id), int interrupt_fd);
 
 /*
  * slurm_allocation_lookup - retrieve info for an existing resource
@@ -4757,6 +4760,7 @@ typedef struct {
 	 * 2+: backup#
 	 */
 	int offset;
+	int rc; /* Ping msg status code */
 } controller_ping_t;
 
 typedef struct {
@@ -4767,6 +4771,7 @@ typedef struct {
 		     * 0: primary
 		     * 1: backup
 		     */
+	int rc; /* Ping msg status code */
 } slurmdbd_ping_t;
 
 /*****************************************************************************\
@@ -4784,7 +4789,7 @@ extern int slurm_ping(int dest);
  * RET array of each ping result (NULL terminated).
  * Caller must xfree() the result.
  */
-extern controller_ping_t *ping_all_controllers();
+extern controller_ping_t *ping_all_controllers(void);
 
 /*
  * slurm_reconfigure - issue RPC to have Slurm controller (slurmctld)

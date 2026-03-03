@@ -353,6 +353,7 @@ JWT_CPPFLAGS = @JWT_CPPFLAGS@
 JWT_LDFLAGS = @JWT_LDFLAGS@
 LD = @LD@
 LDFLAGS = @LDFLAGS@
+LD_EMULATION = @LD_EMULATION@
 LIBCURL = @LIBCURL@
 LIBCURL_CPPFLAGS = @LIBCURL_CPPFLAGS@
 LIBOBJS = @LIBOBJS@
@@ -948,7 +949,7 @@ uninstall-am: uninstall-binPROGRAMS
 
 
 %.bino: %.txt
-	$(AM_V_GEN)curr_dir=$(shell pwd); cd $(abs_srcdir); $(LD) -r -o "$(abs_builddir)/$*.bino" -z noexecstack --format=binary "$(notdir $<)"; cd $$curr_dir
+	$(AM_V_GEN)curr_dir=$(shell pwd); cd $(abs_srcdir); $(LD) -r $(LD_EMULATION) -o "$(abs_builddir)/$*.bino" -z noexecstack --format=binary "$(notdir $<)"; cd $$curr_dir
 	$(AM_V_at)@OBJCOPY@ --rename-section .data=.rodata,alloc,load,readonly,data,contents "$*.bino"
 
 lib_ref.lo: $(BIN_REF)

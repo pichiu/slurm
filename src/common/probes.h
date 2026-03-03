@@ -56,16 +56,18 @@ typedef struct probe_log_s probe_log_t;
  * IN log -
  *	!Null: pass to probe_log() for logging verbose status
  *	Null: logging not requested
+ * IN arg - Arbitrary pointer handed to probe_register()
  * RET status of service
  */
-typedef probe_status_t (*probe_query_t)(probe_log_t *log);
+typedef probe_status_t (*probe_query_t)(probe_log_t *log, void *arg);
 
 /*
  * Register probe query function
- * IN name - name of service to log
+ * IN name - name of service to log. string will be copied.
  * IN query - callback function to query to poll status
+ * IN arg - Arbitrary pointer to pass to query()
  */
-extern void probe_register(const char *name, probe_query_t query);
+extern void probe_register(const char *name, probe_query_t query, void *arg);
 
 /*
  * Log verbose status for service

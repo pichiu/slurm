@@ -99,7 +99,7 @@ static bool _x11_socket_readable(eio_obj_t *obj)
 
 static int _x11_socket_read(eio_obj_t *obj, list_t *objs)
 {
-	void *conn = NULL;
+	conn_t *conn = NULL;
 	slurm_msg_t req, resp;
 	net_forward_msg_t rpc;
 	slurm_addr_t sin;
@@ -277,7 +277,7 @@ extern int setup_x11_forward(void)
 	obj->arg = xstrdup(srun->tls_cert);
 
 	eio_new_initial_obj(eio_handle, obj);
-	slurm_thread_create_detached(_eio_thread, NULL);
+	slurm_thread_create_detached(NULL, _eio_thread, NULL);
 
 	return SLURM_SUCCESS;
 

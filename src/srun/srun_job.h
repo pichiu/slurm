@@ -134,10 +134,17 @@ typedef struct srun_job {
 				    * it needs to talk to */
 } srun_job_t;
 
+extern slurm_step_id_t pending_job_id;
+extern pthread_mutex_t pending_job_id_lock;
+
+/* In the context of a HetJob, this is the first job component */
+extern pthread_mutex_t srun_first_job_lock;
+extern srun_job_t *srun_first_job;
+
 void    update_job_state(srun_job_t *job, srun_job_state_t newstate);
 void    job_force_termination(srun_job_t *job);
 
-srun_job_state_t job_state(srun_job_t *job);
+extern srun_job_state_t srun_job_state(srun_job_t *job);
 
 extern srun_job_t * job_create_noalloc(void);
 
@@ -156,8 +163,7 @@ extern srun_job_t *job_create_allocation(
 			resource_allocation_response_msg_t *resp,
 			slurm_opt_t *opt_local);
 
-extern void init_srun(int argc, char **argv, log_options_t *logopt,
-		      bool handle_signals);
+extern void init_srun(int argc, char **argv, log_options_t *logopt);
 
 extern void create_srun_job(void **p_job, bool *got_alloc);
 

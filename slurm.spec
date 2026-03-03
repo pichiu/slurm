@@ -1,6 +1,6 @@
 Name:		slurm
-Version:	25.05.0
-%define rel	1
+Version:	26.05.0
+%define rel	0rc1
 %if %{defined patch} && %{undefined extraver}
 %define extraver .patched
 %endif
@@ -113,7 +113,7 @@ BuildRequires: dbus-devel
 %endif
 
 %if %{with munge}
-Requires: munge
+Recommends: munge
 BuildRequires: munge-devel munge-libs
 %endif
 

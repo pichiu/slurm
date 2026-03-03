@@ -195,6 +195,7 @@ typedef struct slurm_conf_node {
 	uint16_t res_cores_per_gpu; /* number of cores per GPU to allow
 				     * to only GPU jobs */
 	char *state;
+	uint32_t suspend_time; /* node idle time before power save mode */
 	uint32_t tmp_disk;	/* MB total storage in TMP_FS file system */
 	char *topology_str; /* topology address string */
 	char *tres_weights_str;	/* per TRES billing weight string */

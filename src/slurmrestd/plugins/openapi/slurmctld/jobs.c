@@ -634,7 +634,7 @@ static void _job_post_allocate(ctxt_t *ctxt, job_desc_msg_t *job)
 
 	(void) _foreach_alloc_job(job, NULL);
 
-	if (!(resp = slurm_allocate_resources_blocking(job, 0, NULL))) {
+	if (!(resp = slurm_allocate_resources_blocking(job, 0, NULL, -1))) {
 		resp_error(ctxt, errno, "slurm_allocate_resources_blocking()",
 			   "Job allocation request failed");
 	} else {
@@ -674,7 +674,7 @@ static void _job_post_het_allocate(ctxt_t *ctxt, list_t *hetjob)
 
 	(void) list_for_each(hetjob, _foreach_alloc_job, NULL);
 
-	if (!(resp = slurm_allocate_het_job_blocking(hetjob, 0, NULL))) {
+	if (!(resp = slurm_allocate_het_job_blocking(hetjob, 0, NULL, -1))) {
 		resp_error(ctxt, errno, "slurm_allocate_het_job_blocking()",
 			   "Job allocation request failed");
 	} else {

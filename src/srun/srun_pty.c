@@ -46,6 +46,7 @@
 
 #include "slurm/slurm_errno.h"
 
+#include "src/common/events.h"
 #include "src/common/log.h"
 #include "src/common/macros.h"
 #include "src/common/net.h"
@@ -53,8 +54,9 @@
 #include "src/common/slurm_protocol_defs.h"
 #include "src/common/threadpool.h"
 #include "src/common/xmalloc.h"
-#include "src/common/xsignal.h"
 #include "src/common/xstring.h"
+
+#include "src/conmgr/conmgr.h"
 
 #include "src/interfaces/conn.h"
 
@@ -63,14 +65,13 @@
 
 #include "opt.h"
 
-/*  Processed by pty_thr() */
-static int pty_sigarray[] = { SIGWINCH, 0 };
-static int winch;
+static pthread_mutex_t winch_lock = PTHREAD_MUTEX_INITIALIZER;
+static event_signal_t winch_event = EVENT_INITIALIZER("SIGWINCH");
+static bool handle_sigwinch = false;
 
 /*
  * Static prototypes
  */
-static void   _handle_sigwinch(int sig);
 static void * _pty_thread(void *arg);
 
 /* Set pty window size in job structure
@@ -88,12 +89,6 @@ int set_winsize(int fd, srun_job_t *job)
 	job->ws_col = ws.ws_col;
 	debug2("winsize %u:%u", job->ws_row, job->ws_col);
 	return 0;
-}
-
-/* SIGWINCH should already be blocked by srun/srun_job.c */
-void block_sigwinch(void)
-{
-	xsignal_block(pty_sigarray);
 }
 
 void pty_thread_create(srun_job_t *job)
@@ -117,16 +112,26 @@ void pty_thread_create(srun_job_t *job)
 	job->pty_port = slurm_get_port(&pty_addr);
 	debug2("initialized job control port %hu", job->pty_port);
 
-	slurm_thread_create_detached(_pty_thread, job);
+	slurm_thread_create_detached(NULL, _pty_thread, job);
 }
 
-static void  _handle_sigwinch(int sig)
+static void _on_sigwinch(conmgr_callback_args_t conmgr_args, void *arg)
 {
-	winch = 1;
-	xsignal(SIGWINCH, _handle_sigwinch);
+	if (conmgr_args.status == CONMGR_WORK_STATUS_CANCELLED) {
+		log_flag(CONMGR, "Caught SIGWINCH, but conmgr work cancelled, ignoring.");
+		return;
+	}
+	debug2("Caught SIGWINCH");
+
+	slurm_mutex_lock(&winch_lock);
+	handle_sigwinch = true;
+	EVENT_SIGNAL(&winch_event);
+	slurm_mutex_unlock(&winch_lock);
+
+	return;
 }
 
-static void _notify_winsize_change(void *conn, srun_job_t *job)
+static void _notify_winsize_change(conn_t *conn, srun_job_t *job)
 {
 	pty_winsz_t winsz;
 	int len;
@@ -143,14 +148,13 @@ static void _notify_winsize_change(void *conn, srun_job_t *job)
 
 static void *_pty_thread(void *arg)
 {
-	void *conn = NULL;
+	conn_t *conn = NULL;
 	int fd = -1;
 	srun_job_t *job = (srun_job_t *) arg;
 	slurm_addr_t client_addr;
 	struct termios term;
 
-	xsignal_unblock(pty_sigarray);
-	xsignal(SIGWINCH, _handle_sigwinch);
+	conmgr_add_work_signal(SIGWINCH, _on_sigwinch, NULL);
 
 	if (!(conn = slurm_accept_msg_conn(job->pty_fd, &client_addr))) {
 		error("pty: accept failure: %m");
@@ -165,17 +169,17 @@ static void *_pty_thread(void *arg)
 	fd = conn_g_get_fd(conn);
 
 	net_set_keep_alive(fd);
-	while (job->state <= SRUN_JOB_RUNNING) {
+	while (srun_job_state(job) <= SRUN_JOB_RUNNING) {
 		debug2("waiting for SIGWINCH");
-		if ((poll(NULL, 0, -1) < 1) && (errno != EINTR)) {
-			debug("%s: poll error %m", __func__);
-			continue;
-		}
-		if (winch) {
-			set_winsize(STDOUT_FILENO, job);
-			_notify_winsize_change(conn, job);
-		}
-		winch = 0;
+
+		slurm_mutex_lock(&winch_lock);
+		while (!handle_sigwinch)
+			EVENT_WAIT(&winch_event, &winch_lock);
+		handle_sigwinch = false;
+		slurm_mutex_unlock(&winch_lock);
+
+		set_winsize(STDOUT_FILENO, job);
+		_notify_winsize_change(conn, job);
 	}
 
 	(void) conn_blocking_g_shutdown(conn);

@@ -38,17 +38,21 @@
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
+#include <time.h>
+
 #include "src/common/data.h"
 #include "src/common/parse_time.h"
 #include "src/common/proc_args.h"
 #include "src/common/read_config.h"
 #include "src/common/ref.h"
+#include "src/common/sercli.h"
 #include "src/common/slurm_time.h"
 #include "src/common/xstring.h"
+
 #include "src/interfaces/data_parser.h"
 #include "src/interfaces/serializer.h"
+
 #include "sacct.h"
-#include <time.h>
 
 /* getopt_long options, integers but not characters */
 #define OPT_LONG_DELIMITER 0x100
@@ -526,9 +530,10 @@ extern void parse_command_line(int argc, char **argv)
 		params.opt_local = true;
 
 	while (1) {		/* now cycle through the command line */
-		c = getopt_long(argc, argv,
-				"aA:bBcC:DeE:f:F:g:hi:I:j:k:K:lLM:nN:o:pPq:r:s:S:Ttu:UvVW:x:X",
-				long_options, &option_index);
+		c = getopt_long(
+			argc, argv,
+			"aA:bBcC:DeE:f:F:g:hi:I:j:k:K:lLM:nN:o:pPq:r:R:s:S:Ttu:UvVW:x:X",
+			long_options, &option_index);
 		if (c == -1)
 			break;
 		switch (c) {

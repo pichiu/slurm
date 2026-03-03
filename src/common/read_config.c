@@ -501,6 +501,24 @@ static int _defunct_option(void **dest, slurm_parser_enum_t type,
 	return 0;
 }
 
+static int _parse_suspend_time(char *str, uint32_t *suspend_time)
+{
+	uint64_t tmp_64;
+
+	if (!xstrcasecmp(str, "NONE") || !xstrcasecmp(str, "INFINITE") ||
+	    !xstrcasecmp(str, "-1")) {
+		*suspend_time = INFINITE;
+	} else {
+		tmp_64 = slurm_atoul(str);
+		if (tmp_64 > UINT32_MAX) {
+			return SLURM_ERROR;
+		}
+		*suspend_time = (uint32_t) tmp_64;
+	}
+
+	return SLURM_SUCCESS;
+}
+
 static int _parse_nodename(void **dest, slurm_parser_enum_t type,
 			   const char *key, const char *value,
 			   const char *line, char **leftover)
@@ -531,6 +549,7 @@ static int _parse_nodename(void **dest, slurm_parser_enum_t type,
 		{"Sockets", S_P_UINT16},
 		{"SocketsPerBoard", S_P_UINT16},
 		{"State", S_P_STRING},
+		{"SuspendTime", S_P_STRING},
 		{"ThreadsPerCore", S_P_UINT16},
 		{"TmpDisk", S_P_UINT32},
 		{"Topology", S_P_STRING},
@@ -582,6 +601,7 @@ static int _parse_nodename(void **dest, slurm_parser_enum_t type,
 		bool no_sockets_per_board = false;
 		uint16_t sockets_per_board = 0;
 		char *cpu_bind = NULL;
+		char *tmp = NULL;
 
 		n = _create_conf_node();
 		dflt = default_nodename_tbl;
@@ -692,6 +712,17 @@ static int _parse_nodename(void **dest, slurm_parser_enum_t type,
 		     s_p_get_uint32(&n->weight, "Weight", dflt)) &&
 		     (n->weight == INFINITE))
 			n->weight -= 1;
+
+		if (s_p_get_string(&tmp, "SuspendTime", tbl) ||
+		    s_p_get_string(&tmp, "SuspendTime", dflt)) {
+			if (_parse_suspend_time(tmp, &n->suspend_time)) {
+				error("NodeNames=%s SuspendTime=%s is invalid",
+				      n->nodenames, tmp);
+				xfree(tmp);
+				return -1;
+			}
+			xfree(tmp);
+		}
 
 		s_p_hashtbl_destroy(tbl);
 
@@ -864,6 +895,7 @@ static void _init_conf_node(slurm_conf_node_t *conf_node)
 	conf_node->cores = 1;
 	conf_node->cpus = 1;
 	conf_node->real_memory = 1;
+	conf_node->suspend_time = NO_VAL;
 	conf_node->threads = 1;
 	conf_node->tot_sockets = 1;
 	conf_node->weight = 1;
@@ -1346,10 +1378,7 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 			int max_time = time_str2mins(tmp);
 			if ((max_time < 0) && (max_time != INFINITE)) {
 				error("Bad value \"%s\" for MaxTime", tmp);
-				_destroy_partitionname(p);
-				s_p_hashtbl_destroy(tbl);
-				xfree(tmp);
-				return -1;
+				goto fail;
 			}
 			p->max_time = max_time;
 			xfree(tmp);
@@ -1363,10 +1392,7 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 			int default_time = time_str2mins(tmp);
 			if ((default_time < 0) && (default_time != INFINITE)) {
 				error("Bad value \"%s\" for DefaultTime", tmp);
-				_destroy_partitionname(p);
-				s_p_hashtbl_destroy(tbl);
-				xfree(tmp);
-				return -1;
+				goto fail;
 			}
 			p->default_time = default_time;
 			xfree(tmp);
@@ -1425,8 +1451,7 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 			}
 			if (p->preempt_mode == NO_VAL16) {
 				error("Bad value \"%s\" for PreemptMode", tmp);
-				xfree(tmp);
-				return -1;
+				goto fail;
 			}
 			xfree(tmp);
 		}
@@ -1463,10 +1488,7 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 			else {
 				error("Bad value for SelectTypeParameters: %s",
 				      tmp);
-				_destroy_partitionname(p);
-				s_p_hashtbl_destroy(tbl);
-				xfree(tmp);
-				return -1;
+				goto fail;
 			}
 			xfree(tmp);
 		}
@@ -1502,27 +1524,15 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 			else {
 				error("Bad value \"%s\" for OverSubscribe",
 				      tmp);
-				_destroy_partitionname(p);
-				s_p_hashtbl_destroy(tbl);
-				xfree(tmp);
-				return -1;
+				goto fail;
 			}
 			xfree(tmp);
 		}
 
 		if (s_p_get_string(&tmp, "SuspendTime", tbl)) {
-			if (!xstrcasecmp(tmp, "INFINITE") ||
-			    !xstrcasecmp(tmp, "-1")) {
-				p->suspend_time = INFINITE;
-			} else {
-				tmp_64 = slurm_atoul(tmp);
-				if (tmp_64 > UINT32_MAX) {
-					error("Bad value \"%s\" for SuspendTime",
-					      tmp);
-					xfree(tmp);
-					return -1;
-				}
-				p->suspend_time = (uint32_t) tmp_64;
+			if (_parse_suspend_time(tmp, &p->suspend_time)) {
+				error("Bad value \"%s\" for SuspendTime", tmp);
+				goto fail;
 			}
 			xfree(tmp);
 		}
@@ -1543,10 +1553,7 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 				 p->state_up = PARTITION_INACTIVE;
 			else {
 				error("Bad value \"%s\" for State", tmp);
-				_destroy_partitionname(p);
-				s_p_hashtbl_destroy(tbl);
-				xfree(tmp);
-				return -1;
+				goto fail;
 			}
 			xfree(tmp);
 		}
@@ -1559,6 +1566,11 @@ static int _parse_partitionname(void **dest, slurm_parser_enum_t type,
 		*dest = (void *)p;
 
 		return 1;
+fail:
+		_destroy_partitionname(p);
+		s_p_hashtbl_destroy(tbl);
+		xfree(tmp);
+		return -1;
 	}
 
 	/* should not get here */
@@ -2906,7 +2918,7 @@ void init_slurm_conf(slurm_conf_t *ctl_conf_ptr)
 	xfree(ctl_conf_ptr->suspend_exc_states);
 	xfree(ctl_conf_ptr->suspend_program);
 	ctl_conf_ptr->suspend_rate = NO_VAL16;
-	ctl_conf_ptr->suspend_time = NO_VAL16;
+	ctl_conf_ptr->suspend_time = NO_VAL;
 	ctl_conf_ptr->suspend_timeout = 0;
 	xfree(ctl_conf_ptr->switch_type);
 	xfree(ctl_conf_ptr->switch_param);
@@ -5039,19 +5051,10 @@ static int _validate_and_set_defaults(slurm_conf_t *conf,
 	if (!s_p_get_uint16(&conf->suspend_rate, "SuspendRate", hashtbl))
 		conf->suspend_rate = DEFAULT_SUSPEND_RATE;
 	if (s_p_get_string(&temp_str, "SuspendTime", hashtbl)) {
-		if (!xstrcasecmp(temp_str, "NONE") ||
-		    !xstrcasecmp(temp_str, "INFINITE") ||
-		    !xstrcasecmp(temp_str, "-1")) {
-			conf->suspend_time = INFINITE;
-		} else {
-			uint64_tmp = slurm_atoul(temp_str);
-			if (uint64_tmp > UINT32_MAX) {
-				error("Bad value \"%s\" for SuspendTime",
-				      temp_str);
-				xfree(temp_str);
-				return SLURM_ERROR;
-			}
-			conf->suspend_time = (uint32_t) uint64_tmp;
+		if (_parse_suspend_time(temp_str, &conf->suspend_time)) {
+			error("Bad value \"%s\" for SuspendTime", temp_str);
+			xfree(temp_str);
+			return SLURM_ERROR;
 		}
 		xfree(temp_str);
 	} else {

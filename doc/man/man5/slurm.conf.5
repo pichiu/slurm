@@ -5472,6 +5472,26 @@ Allow any user able to run in a reservation to delete it.
 .IP
 
 .TP
+\fBthreadpool\fR=\fI<enabled|disabled>\fR
+Enable or disable using the threadpool in slurmctld to avoid overhead of
+allocating new process threads by preserving previously created threads.
+The default value is "enabled".
+.IP
+
+.TP
+\fBthreadpool_preallocate\fR=\fI<thread_count>\fR
+The number of process threads to preallocate at startup for thread pool.
+The default value is 32.
+.IP
+
+.TP
+\fBthreadpool_preserve\fR=\fI<thread_count>\fR
+The number of idle process threads to maintain in thread pool before allowing
+threads to exit.
+The default value is 128.
+.IP
+
+.TP
 \fBvalidate_nodeaddr_threads\fR=
 During startup, slurmctld looks up the address for each compute node in the
 system. On large systems this can cause considerable delay, this option permits
@@ -6074,6 +6094,7 @@ The default value is 60 nodes per minute.
 \fBSuspendTime\fR
 Nodes which remain idle or down for this number of seconds will be placed into
 power save mode by \fBSuspendProgram\fR.
+This value can be overridden on a per\-partition or per\-node basis.
 Setting \fBSuspendTime\fR to anything but INFINITE (or \-1) will enable power
 save mode. INFINITE is the default.
 .IP
@@ -6956,17 +6977,12 @@ Multiple node names may be comma separated (e.g. "alpha,beta,gamma")
 and/or a simple node range expression may optionally be used to
 specify numeric ranges of nodes to avoid building a configuration
 file with large numbers of entries.
-The node range expression can contain one pair of square brackets
+The node range expression can contain one or more pairs of square brackets
 with a sequence of comma\-separated numbers and/or ranges of numbers
-separated by a "\-" (e.g. "linux[0\-64,128]", or "lx[15,18,32\-33]").
-Note that the numeric ranges can include one or more leading
-zeros to indicate the numeric portion has a fixed number of digits
+separated by a "\-" (e.g., "linux[0\-64,128]", "lx[15,18,32\-33]", or
+"rack[0\-63]_blade[0\-41]"). Note that the numeric ranges can include one or
+more leading zeros to indicate the numeric portion has a fixed number of digits
 (e.g. "linux[0000\-1023]").
-Multiple numeric ranges can be included in the expression
-(e.g. "rack[0\-63]_blade[0\-41]").
-If one or more numeric expressions are included, one of them
-must be at the end of the name (e.g. "unit[0\-31]rack" is invalid),
-but arbitrary names can always be used in a comma\-separated list.
 .LP
 The node configuration specified the following information:
 
@@ -7258,6 +7274,20 @@ The default value is 1.
 Number of physical processor sockets/chips on a baseboard.
 Sockets and SocketsPerBoard are mutually exclusive.
 The default value is 1.
+.IP
+
+.TP
+\fBSuspendTime\fR
+Nodes which remain idle or down for this number of seconds will be placed into
+power save mode by \fBSuspendProgram\fR.
+This value takes precedence over the partition\-level and global
+\fBSuspendTime\fR settings for the specified nodes.
+For nodes that are in multiple partitions with \fBSuspendTime\fR configured,
+the node\-level value takes precedence. If not set on the node, the partition
+and then global values are used.
+Setting \fBSuspendTime\fR to INFINITE will disable suspending of these nodes.
+Setting \fBSuspendTime\fR to anything but INFINITE (or \-1) will enable power
+save mode.
 .IP
 
 .TP
@@ -8172,6 +8202,8 @@ power save mode by \fBSuspendProgram\fR.
 For nodes that are in multiple partitions with this option set,
 the highest time will take effect. If not set on any partition, the node will
 use the \fBSuspendTime\fR value set for the entire cluster.
+A \fBSuspendTime\fR value set on a \fBNodeName\fR line takes precedence over
+this partition\-level value.
 Setting \fBSuspendTime\fR to INFINITE will disable suspending of nodes in this
 partition.
 Setting \fBSuspendTime\fR to anything but INFINITE (or \-1) will enable power

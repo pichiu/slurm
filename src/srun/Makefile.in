@@ -159,9 +159,9 @@ am__installdirs = "$(DESTDIR)$(bindir)"
 PROGRAMS = $(bin_PROGRAMS)
 am_srun_OBJECTS = allocate.$(OBJEXT) debugger.$(OBJEXT) \
 	fname.$(OBJEXT) launch.$(OBJEXT) multi_prog.$(OBJEXT) \
-	opt.$(OBJEXT) srun.$(OBJEXT) srun_job.$(OBJEXT) \
-	srun_pty.$(OBJEXT) srun.wrapper.$(OBJEXT) step_ctx.$(OBJEXT) \
-	task_state.$(OBJEXT)
+	opt.$(OBJEXT) signals.$(OBJEXT) srun.$(OBJEXT) \
+	srun_job.$(OBJEXT) srun_pty.$(OBJEXT) srun.wrapper.$(OBJEXT) \
+	step_ctx.$(OBJEXT) task_state.$(OBJEXT)
 srun_OBJECTS = $(am_srun_OBJECTS)
 am__DEPENDENCIES_1 =
 AM_V_lt = $(am__v_lt_@AM_V@)
@@ -189,9 +189,10 @@ am__maybe_remake_depfiles = depfiles
 am__depfiles_remade = ./$(DEPDIR)/allocate.Po ./$(DEPDIR)/debugger.Po \
 	./$(DEPDIR)/fname.Po ./$(DEPDIR)/launch.Po \
 	./$(DEPDIR)/multi_prog.Po ./$(DEPDIR)/opt.Po \
-	./$(DEPDIR)/srun.Po ./$(DEPDIR)/srun.wrapper.Po \
-	./$(DEPDIR)/srun_job.Po ./$(DEPDIR)/srun_pty.Po \
-	./$(DEPDIR)/step_ctx.Po ./$(DEPDIR)/task_state.Po
+	./$(DEPDIR)/signals.Po ./$(DEPDIR)/srun.Po \
+	./$(DEPDIR)/srun.wrapper.Po ./$(DEPDIR)/srun_job.Po \
+	./$(DEPDIR)/srun_pty.Po ./$(DEPDIR)/step_ctx.Po \
+	./$(DEPDIR)/task_state.Po
 am__mv = mv -f
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
 	$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
@@ -314,6 +315,7 @@ JWT_CPPFLAGS = @JWT_CPPFLAGS@
 JWT_LDFLAGS = @JWT_LDFLAGS@
 LD = @LD@
 LDFLAGS = @LDFLAGS@
+LD_EMULATION = @LD_EMULATION@
 LIBCURL = @LIBCURL@
 LIBCURL_CPPFLAGS = @LIBCURL_CPPFLAGS@
 LIBOBJS = @LIBOBJS@
@@ -504,6 +506,7 @@ srun_SOURCES = \
 	launch.c launch.h \
 	multi_prog.c multi_prog.h \
 	opt.c opt.h \
+	signals.c \
 	srun.c \
 	srun_job.c srun_job.h \
 	srun_pty.c srun_pty.h \
@@ -608,6 +611,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/launch.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/multi_prog.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/opt.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/signals.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/srun.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/srun.wrapper.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/srun_job.Po@am__quote@ # am--include-marker
@@ -747,6 +751,7 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/launch.Po
 	-rm -f ./$(DEPDIR)/multi_prog.Po
 	-rm -f ./$(DEPDIR)/opt.Po
+	-rm -f ./$(DEPDIR)/signals.Po
 	-rm -f ./$(DEPDIR)/srun.Po
 	-rm -f ./$(DEPDIR)/srun.wrapper.Po
 	-rm -f ./$(DEPDIR)/srun_job.Po
@@ -805,6 +810,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/launch.Po
 	-rm -f ./$(DEPDIR)/multi_prog.Po
 	-rm -f ./$(DEPDIR)/opt.Po
+	-rm -f ./$(DEPDIR)/signals.Po
 	-rm -f ./$(DEPDIR)/srun.Po
 	-rm -f ./$(DEPDIR)/srun.wrapper.Po
 	-rm -f ./$(DEPDIR)/srun_job.Po

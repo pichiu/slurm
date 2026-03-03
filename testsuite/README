@@ -123,7 +123,6 @@ test1.46   Test srun option --kill-on-bad-exit
 test1.48   Test of srun mail options (--mail-type and --mail-user options).
 test1.50   Test of running non-existent job, confirm timely termination.
 test1.51   Test propagation of umask to spawned tasks.
-test1.52   Test of hostfile logic.
 test1.53   Test of --signal option.
 test1.54   Test of MPMD (--multi-prog option).
 test1.55   Verify srun behaves when its controlling terminal disappears.
@@ -815,6 +814,7 @@ test_105_5   Test sbatch --output and --error options work, including use of spa
 test_105_6   Test #SBATCH directives in sbatch scripts
 test_105_7   Test accounting for GPU resources with various allocation options
 test_105_8   Test of job account (--account option).
+test_105_9   Test sbatch --requeue=expedite option (success, failure, epilog failure cases)
 
 
 test_106_#   Testing of sbcast options.
@@ -852,6 +852,7 @@ test_111_1   /commands/sinfo/test_--help.py
 test_111_2   /commands/sinfo/test_--usage.py
 test_111_3   /commands/sinfo/test_--json.py
 test_111_4   Test --state and --nodes filtering
+test_111_5   /commands/sinfo/test_--state.py
 
 test_112_#   Testing of slurmrestd options.
 ===========================================

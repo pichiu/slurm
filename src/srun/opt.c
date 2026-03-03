@@ -826,7 +826,7 @@ static void _opt_args(int argc, char **argv, int het_job_offset)
 	if (!rest && !sropt.test_only)
 		fatal("No command given to execute.");
 
-	command_pos = launch_g_setup_srun_opt(rest, &opt);
+	command_pos = launch_setup_srun_opt(rest, &opt);
 
 	/* make sure we have allocated things correctly */
 	if (command_args)
@@ -881,7 +881,7 @@ static void _opt_args(int argc, char **argv, int het_job_offset)
 	}
 
 	/* may exit() if an error with the multi_prog script */
-	(void) launch_g_handle_multi_prog_verify(command_pos, &opt);
+	(void) launch_handle_multi_prog_verify(command_pos, &opt);
 
 	if (!sropt.multi_prog && (sropt.test_exec || sropt.bcast_flag) &&
 	    opt.argv && opt.argv[command_pos]) {

@@ -45,6 +45,16 @@
 #include "src/common/macros.h"
 #include "src/common/read_config.h"
 
+#define THREADPOOL_MAX_THREADS 2048
+
+#ifndef MEMORY_LEAK_DEBUG
+#define THREADPOOL_DEFAULT_PRESERVE 512
+#define THREADPOOL_DEFAULT_PREALLOCATE 8
+#else
+#define THREADPOOL_DEFAULT_PRESERVE 12
+#define THREADPOOL_DEFAULT_PREALLOCATE 8
+#endif
+
 typedef void *(*threadpool_func_t)(void *arg);
 
 /*
@@ -80,13 +90,13 @@ extern int threadpool_create(threadpool_func_t func, const char *func_name,
  * Note that the attr argument is intentionally omitted, as it will
  * be setup within the macro to Slurm's default options.
  */
-#define slurm_thread_create(id, func, arg) \
+#define slurm_thread_create(name, id, func, arg) \
 	do { \
 		int thread_err = SLURM_SUCCESS; \
 		if ((thread_err = \
 			     threadpool_create((func), \
 					       XSTRINGIFY(func), (arg), false, \
-							  NULL, (id), \
+							  (name), (id), \
 							  __func__))) \
 			fatal("%s: threadpool_create() failed: %s", \
 			      __func__, slurm_strerror(thread_err)); \
@@ -97,12 +107,12 @@ extern int threadpool_create(threadpool_func_t func, const char *func_name,
  * is basically nothing safe you can do with a detached thread's id,
  * so this macro intentionally prevents you from capturing it.
  */
-#define slurm_thread_create_detached(func, arg) \
+#define slurm_thread_create_detached(name, func, arg) \
 	do { \
 		int thread_err = SLURM_SUCCESS; \
 		if ((thread_err = \
 			     threadpool_create(func, XSTRINGIFY(func), arg, \
-								true, NULL, \
+								true, (name), \
 								NULL, \
 								__func__))) \
 			fatal("%s: threadpool_create() failed: %s", \
@@ -112,6 +122,7 @@ extern int threadpool_create(threadpool_func_t func, const char *func_name,
  * Wait for pthread to exit.
  * See pthread_join() for use cases.
  * NOTE: can only be called once per thread.
+ * NOTE: thread IDs repeat but the count of times to join is maintained
  * IN id - thread ID
  * IN caller - __func__ from caller
  * RET SLURM_SUCCESS or error
@@ -126,5 +137,20 @@ extern int threadpool_join(const pthread_t id, const char *caller);
 		else \
 			id = 0; \
 	} while (false)
+
+#define THREADPOOL_PARAM "THREADPOOL="
+#define THREADPOOL_PARAM_PREALLOCATE "THREADPOOL_PREALLOCATE="
+#define THREADPOOL_PARAM_PRESERVE "THREADPOOL_PRESERVE="
+
+/*
+ * Create thread pool
+ * IN default_count - Per daemon default number of threads to pre-allocate
+ * IN params - CSV string with parameters for threadpool
+ *	See THREADPOOL_PARAM_* for possible parameters.
+ */
+extern void threadpool_init(const int default_count, const char *params);
+
+/* Shutdown the threadpool */
+extern void threadpool_fini(void);
 
 #endif

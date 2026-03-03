@@ -38,12 +38,15 @@
 
 #include <netdb.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 
 #include "src/common/list.h"
 #include "src/common/macros.h"
 #include "src/common/pack.h"
 #include "src/common/slurm_protocol_defs.h"
 #include "src/common/slurm_time.h"
+
+#include "src/interfaces/conn.h"
 
 #define CONMGR_THREAD_COUNT_MIN 2
 #define CONMGR_THREAD_COUNT_MAX 256
@@ -591,6 +594,8 @@ extern int conmgr_create_listen_sockets(conmgr_con_type_t type,
  * IN addr - destination address to connect() socket
  * IN addrlen - sizeof(*addr)
  * IN events - ptr to function callback on events
+ * IN tls_cert - TLS certificate for destination address, used when destination
+ * address TLS certificate is not signed by a trusted CA.
  * IN arg - arbitrary ptr handed to on_connection callback
  * RET SLURM_SUCCESS or error
  */
@@ -598,7 +603,7 @@ extern int conmgr_create_connect_socket(conmgr_con_type_t type,
 					conmgr_con_flags_t flags,
 					slurm_addr_t *addr, socklen_t addrlen,
 					const conmgr_events_t *events,
-					void *arg);
+					char *tls_cert, void *arg);
 
 /*
  * Run connection manager main loop for until shutdown
@@ -908,6 +913,23 @@ typedef struct {
 extern conmgr_fd_status_t conmgr_fd_get_status(conmgr_fd_t *con);
 
 /*
+ * Get status of connection
+ * IN con - connection to query
+ * IN status_ptr - pointer to status to populate
+ * RET SLURM_SUCCESS or error
+ */
+extern int conmgr_con_get_status(conmgr_fd_ref_t *con,
+				 conmgr_fd_status_t *status_ptr);
+
+/*
+ * Run fstat() against connection input file descriptor
+ * IN con - connection to query
+ * IN stat_ptr - stat struct to populate
+ * RET SLURM_SUCCESS or error
+ */
+extern int conmgr_con_fstat_input(conmgr_fd_ref_t *con, struct stat *stat_ptr);
+
+/*
  * Check to see if the con->output_fd is currently open and can (in theory)
  * accept more write()s.
  *
@@ -947,7 +969,7 @@ extern bool conmgr_enabled(void);
  * IN arg - arbitrary pointer func_arg handed to conmgr_queue_extract_con_fd()
  */
 typedef void (*conmgr_extract_fd_func_t)(conmgr_callback_args_t conmgr_args,
-					 void *tls_conn, void *arg);
+					 conn_t *tls_conn, void *arg);
 
 /*
  * Queue up extraction of file descriptors from a connection.
@@ -996,12 +1018,28 @@ extern int conmgr_set_params(const char *params);
 extern int conmgr_quiesce_fd(conmgr_fd_t *con);
 
 /*
+ * Mark connection as quiesced
+ * @see CON_FLAG_QUIESCE for details
+ * IN ref - reference to connection to set CON_FLAG_QUIESCE flag
+ * RET SLURM_SUCCESS or error
+ */
+extern int conmgr_quiesce_con(conmgr_fd_ref_t *ref);
+
+/*
  * Remove queisced flag from connection
  * @see CON_FLAG_QUIESCE for details
  * IN con - connection to unset CON_FLAG_QUIESCE flag
  * RET SLURM_SUCCESS or error
  */
 extern int conmgr_unquiesce_fd(conmgr_fd_t *con);
+
+/*
+ * Remove queisced flag from connection
+ * @see CON_FLAG_QUIESCE for details
+ * IN ref - reference to connection to unset CON_FLAG_QUIESCE flag
+ * RET SLURM_SUCCESS or error
+ */
+extern int conmgr_unquiesce_con(conmgr_fd_ref_t *ref);
 
 /*
  * True if connection is quiesced.

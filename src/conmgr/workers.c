@@ -127,7 +127,7 @@ static int _detect_cpu_count(void)
 	return count;
 }
 
-static probe_status_t _probe(probe_log_t *log)
+static probe_status_t _probe(probe_log_t *log, void *arg)
 {
 	probe_status_t status = PROBE_RC_UNKNOWN;
 
@@ -238,7 +238,7 @@ extern void workers_init(int count, int default_count)
 	for (int i = 0; i < count; i++)
 		_create_worker(i);
 
-	probe_register("conmgr->workers", _probe);
+	probe_register("conmgr->workers", _probe, NULL);
 }
 
 extern void workers_fini(void)

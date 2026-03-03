@@ -228,7 +228,7 @@ extern void slurm_msg_t_init(slurm_msg_t *msg)
 extern int slurm_msg_t_init_address(slurm_msg_t *msg)
 {
 	int rc = EINVAL, fd = -1;
-	void *conn = NULL;
+	conn_t *conn = NULL;
 
 	if (!msg)
 		return rc;
@@ -1878,6 +1878,7 @@ extern void slurm_free_job_info_members(job_info_t * job)
 		xfree(job->het_job_id_set);
 		xfree(job->job_size_str);
 		xfree(job->licenses);
+		xfree(job->licenses_allocated);
 		xfree(job->mail_user);
 		xfree(job->mcs_label);
 		xfree(job->mem_per_tres);
@@ -1894,6 +1895,7 @@ extern void slurm_free_job_info_members(job_info_t * job)
 		xfree(job->req_node_inx);
 		xfree(job->req_nodes);
 		xfree(job->resv_name);
+		xfree(job->resv_ports);
 		free_job_resources(&job->job_resrcs);
 		xfree(job->selinux_context);
 		xfree(job->state_desc);
@@ -2113,6 +2115,7 @@ extern void slurm_free_job_step_create_request_msg(
 {
 	if (msg) {
 		xfree(msg->container);
+		xfree(msg->container_id);
 		xfree(msg->cpus_per_tres);
 		xfree(msg->exc_nodes);
 		xfree(msg->features);
@@ -2526,7 +2529,10 @@ extern void slurm_free_forward_data_msg(forward_data_msg_t *msg)
 
 extern void slurm_free_ping_slurmd_resp(ping_slurmd_resp_msg_t *msg)
 {
-	xfree(msg);
+	if (msg) {
+		xfree(msg->node_name);
+		xfree(msg);
+	}
 }
 
 /*

@@ -38,6 +38,7 @@
 #include <signal.h>
 #include <stdlib.h>
 
+#include "src/common/atomic.h"
 #include "src/common/log.h"
 #include "src/common/macros.h"
 #include "src/common/probes.h"
@@ -138,7 +139,7 @@ static void _probe_verbose(probe_log_t *log)
 	     quiesce_start, BOOL_CHARIFY(mgr.quiesce.active));
 }
 
-static probe_status_t _probe(probe_log_t *log)
+static probe_status_t _probe(probe_log_t *log, void *arg)
 {
 	probe_status_t status = PROBE_RC_UNKNOWN;
 
@@ -234,9 +235,11 @@ extern void conmgr_init(int thread_count, int default_thread_count,
 	/* Hook into atexit() in always clean shutdown if exit() called */
 	(void) atexit(_at_exit);
 
-	probe_register("conmgr", _probe);
-	probe_register("conmgr->connections", probe_connections);
-	probe_register("conmgr->work", probe_work);
+	atomic_log_features();
+
+	probe_register("conmgr", _probe, NULL);
+	probe_register("conmgr->connections", probe_connections, NULL);
+	probe_register("conmgr->work", probe_work, NULL);
 }
 
 extern void conmgr_fini(void)
@@ -329,7 +332,7 @@ extern int conmgr_run(bool blocking)
 	if (mgr.watch_thread)
 		running = true;
 	else if (!blocking)
-		slurm_thread_create(&mgr.watch_thread, watch_thread, NULL);
+		slurm_thread_create("watch", &mgr.watch_thread, watch, NULL);
 	else
 		mgr.watch_thread = pthread_self();
 

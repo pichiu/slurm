@@ -101,6 +101,14 @@ extern buf_t *create_mmap_buf(const char *file);
 extern buf_t *create_shadow_buf(char *data, uint32_t size);
 extern void free_buf(buf_t *my_buf);
 extern buf_t *init_buf(uint32_t size);
+
+/*
+ * Assign data to buffer
+ * IN data_ptr - Pointer to data to take ownership of
+ * IN bytes - Number of populated bytes in data
+ * WARNING: data must be xmalloc()ed
+ */
+extern void assign_buf(buf_t *buf, char **data_ptr, uint32_t bytes);
 /*
  * Try to create buffer by given number of bytes.
  * IN size - number of bytes in buffer
@@ -124,7 +132,20 @@ extern int try_grow_buf(buf_t *buffer, uint32_t size);
  * RET SLURM_SUCCESS or error
  */
 extern int try_grow_buf_remaining(buf_t *buffer, uint32_t size);
-extern void *xfer_buf_data(buf_t *my_buf);
+/*
+ * Extract Buffer head pointer
+ * NOTE: Use xfer_buf_data() macro instead
+ * IN/OUT my_buf_ptr - Pointer to buffer (will be xfree()ed and set to NULL)
+ * RET pointer to buffer's head pointer or NULL on failure
+ */
+extern void *xfer_buf_data_ptr(buf_t **my_buf_ptr);
+
+/*
+ * Extract Buffer head pointer
+ * IN/OUT my_buf - Pointer to buffer (will be xfree()ed)
+ * RET pointer to buffer's head pointer or NULL on failure
+ */
+#define xfer_buf_data(my_buf) xfer_buf_data_ptr(&my_buf)
 
 extern void pack_time(time_t val, buf_t *buffer);
 extern int unpack_time(time_t *valp, buf_t *buffer);

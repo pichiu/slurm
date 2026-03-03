@@ -42,10 +42,12 @@
 
 #include "src/common/log.h"
 #include "src/common/plugrack.h"
+#include "src/common/sercli.h"
 #include "src/common/slurm_protocol_api.h"
 #include "src/common/timers.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
+
 #include "src/interfaces/data_parser.h"
 #include "src/interfaces/serializer.h"
 #include "src/interfaces/topology.h"
@@ -138,6 +140,8 @@ static void _free_topology_ctx_members(topology_ctx_t *tctx_ptr)
 			free_topology_tree_config(tctx_ptr->config);
 		else if (!xstrcmp(tctx_ptr->plugin, "topology/block"))
 			free_topology_block_config(tctx_ptr->config);
+		else if (!xstrcmp(tctx_ptr->plugin, "topology/ring"))
+			free_topology_ring_config(tctx_ptr->config);
 
 		xfree(tctx_ptr->name);
 		xfree(tctx_ptr->plugin);
@@ -232,11 +236,12 @@ static int _parse_yaml(char *topo_conf)
 		goto done;
 	}
 
-	DATA_PARSE_FROM_STR(TOPOLOGY_CONF_ARRAY, conf_buf->head, conf_buf->size,
-			    tctx_array, NULL, MIME_TYPE_YAML, retval);
-	if (retval)
-		fatal("Something wrong with reading %s: %s", topo_conf,
-		      slurm_strerror(retval));
+	if ((retval = SERCLI_PARSE_STR(TOPOLOGY_CONF_ARRAY, NULL, tctx_array,
+				       get_buf_data(conf_buf),
+				       size_buf(conf_buf), MIME_TYPE_YAML)))
+		fatal("Something wrong with reading %s: %s",
+		      topo_conf, slurm_strerror(retval));
+
 	qsort(tctx_array.tctx, tctx_array.tctx_num, sizeof(topology_ctx_t),
 	      _cmp_tctx);
 	for (int i = 0; i < tctx_array.tctx_num; i++) {
@@ -252,10 +257,12 @@ static int _parse_yaml(char *topo_conf)
 
 	if (get_log_level() > LOG_LEVEL_DEBUG2) {
 		char *dump_str = NULL;
-		DATA_DUMP_TO_STR(TOPOLOGY_CONF_ARRAY, tctx_array, dump_str,
-				 NULL, MIME_TYPE_YAML, SER_FLAGS_NO_TAG,
-				 retval);
-		debug2("%s", dump_str);
+
+		if (!(SERCLI_DUMP_STR(TOPOLOGY_CONF_ARRAY, NULL, tctx_array,
+				      dump_str, MIME_TYPE_YAML,
+				      SER_FLAGS_NO_TAG)))
+			debug2("%s", dump_str);
+
 		xfree(dump_str);
 	}
 
@@ -398,18 +405,14 @@ extern int topology_g_destroy_config(void)
 
 extern char *topology_g_get_config(void)
 {
-	int retval = SLURM_SUCCESS;
 	char *dump_str = NULL;
 	topology_ctx_array_t tctx_array = {
 		.tctx = tctx,
 		.tctx_num = tctx_num,
 	};
 
-	DATA_DUMP_TO_STR(TOPOLOGY_CONF_ARRAY, tctx_array, dump_str, NULL,
-			 MIME_TYPE_YAML, SER_FLAGS_NO_TAG, retval);
-
-	if (retval)
-		xfree(dump_str);
+	(void) SERCLI_DUMP_STR(TOPOLOGY_CONF_ARRAY, NULL, tctx_array, dump_str,
+			       MIME_TYPE_YAML, SER_FLAGS_NO_TAG);
 
 	return dump_str;
 }
@@ -454,6 +457,7 @@ extern int topology_g_add_rm_node(node_record_t *node_ptr)
 {
 	int rc = SLURM_SUCCESS;
 	char *topology_str, *token, *save_ptr = NULL;
+	bool *set_tctx = NULL;
 
 	xassert(plugin_inited);
 
@@ -470,6 +474,7 @@ extern int topology_g_add_rm_node(node_record_t *node_ptr)
 	topology_str = xstrdup(node_ptr->topology_str);
 	token = strtok_r(topology_str, ",", &save_ptr);
 
+	set_tctx = xcalloc(tctx_num, sizeof(*set_tctx));
 	while (token) {
 		char *name, *unit = NULL;
 		int tctx_idx;
@@ -488,9 +493,23 @@ extern int topology_g_add_rm_node(node_record_t *node_ptr)
 		if (rc)
 			break;
 
+		set_tctx[tctx_idx] = true;
 		token = strtok_r(NULL, ",", &save_ptr);
 	}
 
+	if (!rc) {
+		/* clear the node from any topology not in topology_str */
+		for (int i = 0; i < tctx_num; i++) {
+			if (set_tctx[i])
+				continue;
+			rc = (*(ops[tctx[i].idx].add_rm_node))(node_ptr, NULL,
+							       &(tctx[i]));
+			if (rc)
+				break;
+		}
+	}
+
+	xfree(set_tctx);
 	xfree(topology_str);
 
 	return rc;
@@ -873,6 +892,32 @@ extern void free_topology_block_config(topology_block_config_t *config)
 			_free_block_conf_members(&config->block_configs[i]);
 		xfree(config->block_configs);
 		FREE_NULL_LIST(config->block_sizes);
+		xfree(config);
+	}
+}
+
+static void _free_ring_conf_members(slurm_conf_ring_t *config)
+{
+	if (config) {
+		xfree(config->ring_name);
+		xfree(config->nodes);
+	}
+}
+
+extern void free_ring_conf(slurm_conf_ring_t *config)
+{
+	if (config) {
+		_free_ring_conf_members(config);
+		xfree(config);
+	}
+}
+
+extern void free_topology_ring_config(topology_ring_config_t *config)
+{
+	if (config) {
+		for (int i = 0; i < config->config_cnt; i++)
+			_free_ring_conf_members(&config->ring_configs[i]);
+		xfree(config->ring_configs);
 		xfree(config);
 	}
 }

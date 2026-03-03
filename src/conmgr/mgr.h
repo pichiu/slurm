@@ -57,6 +57,8 @@
 #include "src/conmgr/conmgr.h"
 #include "src/conmgr/polling.h"
 
+#include "src/interfaces/tls.h"
+
 /* Default buffer to 1 page */
 #define BUFFER_START_SIZE 4096
 
@@ -143,6 +145,8 @@ typedef enum {
 	FLAG_RPC_RECV_FORWARD = CON_FLAG_RPC_RECV_FORWARD,
 	/* True if on_fingerprint() pending */
 	FLAG_WAIT_ON_EXTRACT = SLURM_BIT(24),
+	/* True if TLS is currently attempting shutting down */
+	FLAG_IS_TLS_SHUTTING_DOWN = SLURM_BIT(25),
 } con_flags_t;
 
 /* Mask over flags that track connection state */
@@ -195,9 +199,11 @@ struct conmgr_fd_s {
 	/* call backs for events */
 	const conmgr_events_t *events;
 	/* Opaque pointer to TLS state */
-	void *tls;
+	tls_conn_t *tls;
 	/* buffer holding incoming already read encrypted data */
 	buf_t *tls_in;
+	/* TLS certificate for connecting to server not trusted by CA */
+	char *tls_cert;
 	/* buffer holding incoming already read data */
 	buf_t *in;
 	/* timestamp when last read() got >0 bytes or when connect() called */
@@ -459,7 +465,6 @@ extern void handle_work(bool locked, work_t *work);
  * Poll all connections and handle any events
  */
 extern void *watch(void *arg);
-extern void *watch_thread(void *arg);
 
 /*
  * Wait for _watch() to finish
@@ -559,15 +564,13 @@ extern void wrap_on_data(conmgr_callback_args_t conmgr_args, void *arg);
  * IN arg - arbitrary pointer to hand to events
  * RET SLURM_SUCCESS or error
  */
-extern int add_connection(conmgr_con_type_t type,
-			  conmgr_fd_t *source, int input_fd,
-			  int output_fd,
+extern int add_connection(conmgr_con_type_t type, conmgr_fd_t *source,
+			  int input_fd, int output_fd,
 			  const conmgr_events_t *events,
-			  conmgr_con_flags_t flags,
-			  const slurm_addr_t *addr,
+			  conmgr_con_flags_t flags, const slurm_addr_t *addr,
 			  socklen_t addrlen, bool is_listen,
 			  const char *unix_socket_path, void *tls_conn,
-			  void *arg);
+			  char *tls_cert, void *arg);
 
 extern void close_all_connections(void);
 
@@ -662,7 +665,7 @@ extern void queue_on_connection(conmgr_fd_t *con);
  * Probe all connections to info()
  * NOTE: caller must not hold conmgr global lock
  */
-extern probe_status_t probe_connections(probe_log_t *log);
+extern probe_status_t probe_connections(probe_log_t *log, void *arg);
 
 /* Min buffer size to call printf_work() */
 #define PRINTF_WORK_CHARS 512
@@ -683,6 +686,6 @@ extern size_t printf_work(const work_t *work, char *buffer, size_t len,
  * Probe all work
  * NOTE: caller must not hold conmgr global lock
  */
-extern probe_status_t probe_work(probe_log_t *log);
+extern probe_status_t probe_work(probe_log_t *log, void *arg);
 
 #endif /* _CONMGR_MGR_H */

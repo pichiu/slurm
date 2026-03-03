@@ -81,16 +81,18 @@
 
 #include "src/bcast/file_bcast.h"
 
-#include "launch.h"
-#include "allocate.h"
-#include "srun_job.h"
-#include "step_ctx.h"
-#include "opt.h"
-#include "debugger.h"
-#include "src/srun/srun_pty.h"
-#include "multi_prog.h"
 #include "src/api/pmi_server.h"
 #include "src/api/step_launch.h"
+
+#include "src/srun/allocate.h"
+#include "src/srun/debugger.h"
+#include "src/srun/launch.h"
+#include "src/srun/multi_prog.h"
+#include "src/srun/opt.h"
+#include "src/srun/signals.h"
+#include "src/srun/srun_job.h"
+#include "src/srun/srun_pty.h"
+#include "src/srun/step_ctx.h"
 
 #ifndef OPEN_MPI_PORT_ERROR
 /* This exit code indicates the launched Open MPI tasks could
@@ -99,6 +101,8 @@
 #define OPEN_MPI_PORT_ERROR 108
 #endif
 
+#define THREAD_COUNT 3
+
 static struct termios termdefaults;
 static uint32_t global_rc = 0;
 static uint32_t mpi_plugin_rc = 0;
@@ -106,10 +110,7 @@ static srun_job_t *job = NULL;
 
 extern char **environ;	/* job environment */
 bool srun_max_timer = false;
-bool srun_shutdown  = false;
-int sig_array[] = {
-	SIGINT,  SIGQUIT, SIGCONT, SIGTERM, SIGHUP,
-	SIGALRM, SIGUSR1, SIGUSR2, SIGPIPE, 0 };
+pthread_mutex_t srun_max_timer_lock = PTHREAD_MUTEX_INITIALIZER;
 bitstr_t *g_het_grp_bits = NULL;
 
 typedef struct _launch_app_data
@@ -177,6 +178,12 @@ int srun(int ac, char **av)
 	log_init(xbasename(av[0]), logopt, 0, NULL);
 	_set_exit_code();
 
+	/* Must be called before starting conmgr. */
+	xsignal(SIGTTIN, SIG_IGN);
+
+	conmgr_init(0, THREAD_COUNT, 0);
+	conmgr_run(false);
+
 	if (cli_filter_init() != SLURM_SUCCESS)
 		fatal("failed to initialize cli_filter plugin");
 	if (switch_g_init(false) != SLURM_SUCCESS )
@@ -184,7 +191,7 @@ int srun(int ac, char **av)
 
 	_setup_env_working_cluster();
 
-	init_srun(ac, av, &logopt, 1);
+	init_srun(ac, av, &logopt);
 	if (opt_list) {
 		if (!_enable_het_job_steps())
 			fatal("Job steps that span multiple components of a heterogeneous job are not currently supported");
@@ -246,6 +253,9 @@ int srun(int ac, char **av)
 	log_fini();
 #endif /* MEMORY_LEAK_DEBUG */
 
+	conmgr_request_shutdown();
+	conmgr_fini();
+
 	return (int)global_rc;
 }
 
@@ -263,7 +273,7 @@ static void *_launch_one_app(void *data)
 	slurm_step_launch_callbacks_t step_callbacks;
 
 	memset(&step_callbacks, 0, sizeof(step_callbacks));
-	step_callbacks.step_signal = launch_g_fwd_signal;
+	step_callbacks.step_signal = launch_fwd_signal;
 
 	/*
 	 * Run pre-launch once for entire hetjob
@@ -293,11 +303,15 @@ static void *_launch_one_app(void *data)
 		opt_local->argv[0] = xstrdup(opt_local->srun_opt->bcast_file);
 	}
 relaunch:
-	launch_common_set_stdio_fds(job, &cio_fds, opt_local);
+	slurm_mutex_lock(&srun_sig_forward_lock);
+	srun_sig_forward = true;
+	slurm_mutex_unlock(&srun_sig_forward_lock);
 
-	if (!launch_g_step_launch(job, &cio_fds, &global_rc, &step_callbacks,
-				  opt_local)) {
-		if (launch_g_step_wait(job, got_alloc, opt_local) == -1)
+	launch_set_stdio_fds(job, &cio_fds, opt_local);
+
+	if (!launch_step_launch(job, &cio_fds, &global_rc, &step_callbacks,
+				opt_local)) {
+		if (launch_step_wait(job, got_alloc, opt_local) == -1)
 			goto relaunch;
 		if (job->step_ctx->launch_state->ret_code > mpi_plugin_rc)
 			mpi_plugin_rc = job->step_ctx->launch_state->ret_code;
@@ -552,7 +566,8 @@ static void _launch_app(srun_job_t *job, list_t *srun_job_list, bool got_alloc)
 			opts->step_mutex  = &step_mutex;
 			srun_opt->het_step_cnt = het_job_step_cnt;
 
-			slurm_thread_create_detached(_launch_one_app, opts);
+			slurm_thread_create_detached(NULL, _launch_one_app,
+						     opts);
 		}
 		xfree(het_job_node_list);
 		xfree(het_job_task_cnts);
@@ -711,7 +726,6 @@ static void _setup_one_job_env(slurm_opt_t *opt_local, srun_job_t *job,
 			tcgetattr(job->input_fd, &termdefaults);
 			atexit(&_pty_restore);
 
-			block_sigwinch();
 			pty_thread_create(job);
 			env->pty_port = job->pty_port;
 			env->ws_col = job->ws_col;

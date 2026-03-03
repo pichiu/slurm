@@ -7027,6 +7027,120 @@ static int DUMP_FUNC(TOPOLOGY_FLAT)(const parser_t *const parser, void *obj,
 	return rc;
 }
 
+static int PARSE_FUNC(TOPOLOGY_RING)(const parser_t *const parser, void *obj,
+				     data_t *src, args_t *args,
+				     data_t *parent_path)
+{
+	topology_ctx_t *tctx = obj;
+	size_t src_dict_count;
+	int rc = SLURM_SUCCESS;
+	xassert(tctx);
+
+	if (data_get_type(src) != DATA_TYPE_DICT)
+		return parse_error(parser, args, parent_path,
+				   ESLURM_DATA_EXPECTED_DICT,
+				   "Rejecting %s when dictionary expected",
+				   data_get_type_string(src));
+
+	src_dict_count = data_get_dict_length(src);
+	if (tctx->plugin && src_dict_count) {
+		rc = parse_error(
+			parser, args, parent_path, SLURM_ERROR,
+			"Field ring is mutually excusive with fields block, tree and flat");
+	} else if (src_dict_count) {
+		tctx->plugin = xstrdup("topology/ring");
+		rc = PARSE(TOPOLOGY_RING_CONFIG_PTR, tctx->config, src,
+			   parent_path, args);
+	}
+
+	return rc;
+}
+
+static int DUMP_FUNC(TOPOLOGY_RING)(const parser_t *const parser, void *obj,
+				    data_t *dst, args_t *args)
+{
+	topology_ctx_t *tctx = obj;
+	int rc = SLURM_SUCCESS;
+	xassert(tctx);
+
+	if (!xstrcmp(tctx->plugin, "topology/ring"))
+		rc = DUMP(TOPOLOGY_RING_CONFIG_PTR, tctx->config, dst, args);
+	else
+		data_set_dict(dst);
+
+	return rc;
+}
+
+static int _parse_ring_conf(void *array, int index, data_t *src, args_t *args,
+			    data_t *parent_path)
+{
+	slurm_conf_ring_t *ring_config_array = array;
+	return PARSE(RING_CONFIG, ring_config_array[index], src, parent_path,
+		     args);
+}
+
+static int PARSE_FUNC(TOPOLOGY_RING_CONFIG_ARRAY)(const parser_t *const parser,
+						  void *obj, data_t *src,
+						  args_t *args,
+						  data_t *parent_path)
+{
+	topology_ring_config_t *ring_configs = obj;
+	int rc = SLURM_SUCCESS;
+	xassert(ring_configs);
+
+	if (data_get_type(src) == DATA_TYPE_DICT) {
+		/* single ring configuration */
+		ring_configs->config_cnt = 1;
+		xrealloc(ring_configs->ring_configs,
+			 sizeof(*ring_configs->ring_configs));
+
+		rc = PARSE(RING_CONFIG, *ring_configs->ring_configs, src,
+			   parent_path, args);
+	} else if (data_get_type(src) == DATA_TYPE_LIST) {
+		foreach_topo_array_args_t fargs = {
+			.magic = PARSE_TOPO_ARRAY_MAGIC,
+			.args = args,
+			.parent_path = parent_path,
+			.parser = parser,
+			.parse_callback = _parse_ring_conf,
+			.rc_ptr = &rc,
+		};
+
+		/* multiple rings configurations */
+		ring_configs->config_cnt = data_get_list_length(src);
+		xrealloc(ring_configs->ring_configs,
+			 (sizeof(*ring_configs->ring_configs) *
+			  ring_configs->config_cnt));
+
+		fargs.array_size = ring_configs->config_cnt;
+		fargs.array = ring_configs->ring_configs;
+		(void) data_list_for_each(src, _foreach_topo_array, &fargs);
+	} else {
+		rc = on_error(DUMPING, parser->type, args,
+			      ESLURM_DATA_CONV_FAILED, __func__, __func__,
+			      "Unexpected type %s when expecting a list",
+			      data_type_to_string(data_get_type(src)));
+	}
+
+	return rc;
+}
+
+static int DUMP_FUNC(TOPOLOGY_RING_CONFIG_ARRAY)(const parser_t *const parser,
+						 void *obj, data_t *dst,
+						 args_t *args)
+{
+	topology_ring_config_t *ring_configs = obj;
+	int rc = SLURM_SUCCESS;
+	xassert(ring_configs);
+
+	data_set_list(dst);
+
+	for (int i = 0; i < ring_configs->config_cnt; i++)
+		if ((rc = DUMP(RING_CONFIG, ring_configs->ring_configs[i],
+			       data_list_append(dst), args)))
+			return rc;
+	return rc;
+}
 static void FREE_FUNC(H_LAYER)(void *ptr)
 {
 	hierarchy_layer_t *layer = ptr;
@@ -7342,6 +7456,8 @@ static int PARSE_FUNC(NAMESPACE_NODE_CONF_COMPLEX)(const parser_t *const parser,
 		data_key_get_const(src, "clone_ns_script_wait");
 	ns_node_conf->set_clonensepilog_wait =
 		data_key_get_const(src, "clone_ns_epilog_wait");
+	ns_node_conf->set_disable_bpf_token =
+		data_key_get_const(src, "disable_bpf_token");
 	ns_node_conf->set_shared = data_key_get_const(src, "shared");
 
 	rc = PARSE(NAMESPACE_CONF_PTR, ns_node_conf->ns_conf, src, parent_path,
@@ -7768,7 +7884,7 @@ static const parser_t PARSER_ARRAY(JOB)[] = {
 	add_parse(STRING, cluster, "cluster", "Cluster name"),
 	add_parse(STRING, constraints, "constraints", "Feature(s) the job requested as a constraint"),
 	add_parse(STRING, container, "container", "Absolute path to OCI container bundle"),
-	add_skip(db_index),
+	add_parse(SLUID, db_index, "sluid", "SLUID"),
 	add_parse(PROCESS_EXIT_CODE, derived_ec, "derived_exit_code", "Highest exit code of all job steps"),
 	add_parse(STRING, derived_es, "comment/job", "Arbitrary comment made by user"),
 	add_parse(UINT32, elapsed, "time/elapsed", "Elapsed time in seconds"),
@@ -8970,6 +9086,7 @@ static const parser_t PARSER_ARRAY(CONTROLLER_PING)[] = {
 	add_parse(UINT64, latency, "latency", "Number of microseconds it took to successfully ping or timeout"),
 	add_deprec(CONTROLLER_PING_MODE, offset, 1, "mode", "The operating mode of the responding slurmctld", SLURM_24_11_PROTOCOL_VERSION),
 	add_overload_req(CONTROLLER_PING_PRIMARY, offset, 1, "primary", "Is responding slurmctld the primary controller"),
+	add_parse(ERROR, rc, "status", "Ping status code"),
 };
 #undef add_parse
 #undef add_deprec
@@ -8982,6 +9099,7 @@ static const parser_t PARSER_ARRAY(SLURMDBD_PING)[] = {
 	add_parse_req(BOOL, pinged, "responding", "If ping RPC responded with pong from slurmdbd"),
 	add_parse_req(UINT64, latency, "latency", "Number of microseconds it took to successfully ping or timeout"),
 	add_parse_req(CONTROLLER_PING_PRIMARY, offset, "primary", "Is responding slurmdbd the primary controller"),
+	add_parse_req(ERROR, rc, "status", "Ping status code"),
 };
 #undef add_parse_req
 
@@ -9565,6 +9683,8 @@ static const parser_t PARSER_ARRAY(JOB_DESC_MSG)[] = {
 
 #define add_parse(mtype, field, path, desc)				\
 	add_parser(update_node_msg_t, mtype, false, field, 0, path, desc)
+#define add_removed(mtype, path, desc, deprec) \
+	add_parser_removed(update_node_msg_t, mtype, false, path, desc, deprec)
 static const parser_t PARSER_ARRAY(UPDATE_NODE_MSG)[] = {
 	add_parse(STRING, comment, "comment", "Arbitrary comment"),
 	add_parse(UINT32, cpu_bind, "cpu_bind", "Default method for binding tasks to allocated CPUs"),
@@ -9577,12 +9697,13 @@ static const parser_t PARSER_ARRAY(UPDATE_NODE_MSG)[] = {
 	add_parse(HOSTLIST_STRING, node_names, "name", "NodeName"),
 	add_parse(NODE_STATES, node_state, "state", "New state to assign to the node"),
 	add_parse(STRING, reason, "reason", "Reason for node being DOWN or DRAINING"),
-	add_parse(USER_ID, reason_uid, "reason_uid", "User ID to associate with the reason (needed if user root is sending message)"),
+	add_removed(USER_ID, "reason_uid", "User ID to associate with the reason (needed if user root is sending message)", SLURM_26_05_PROTOCOL_VERSION),
 	add_parse(UINT32_NO_VAL, resume_after, "resume_after", "Number of seconds after which to automatically resume DOWN or DRAINED node"),
 	add_parse(STRING, topology_str, "topology_str", "Topology"),
 	add_parse(UINT32_NO_VAL, weight, "weight", "Weight of the node for scheduling purposes"),
 };
 #undef add_parse
+#undef add_removed
 
 #define add_parse(mtype, field, path, desc)				\
 	add_parser(openapi_resp_meta_t, mtype, false, field, 0, path, desc)
@@ -10508,6 +10629,21 @@ static const parser_t PARSER_ARRAY(TOPOLOGY_BLOCK_CONFIG)[] = {
 #undef add_parse
 
 #define add_parse(mtype, field, path, desc)				\
+	add_parser(slurm_conf_ring_t, mtype, false, field, 0, path, desc)
+static const parser_t PARSER_ARRAY(RING_CONFIG)[] = {
+	add_parse(STRING, ring_name, "ring", "The name of a ring. This name is internal to Slurm and arbitrary. Each block should have a unique name. This field must be specified."),
+	add_parse(STRING, nodes, "nodes", "Child Nodes of the named ring. This must be specified along with the RingName."),
+};
+#undef add_parse
+
+#define add_cparse(mtype, path, desc)					\
+	add_complex_parser(topology_ring_config_t, mtype, false, path, desc)
+static const parser_t PARSER_ARRAY(TOPOLOGY_RING_CONFIG)[] = {
+	add_cparse(TOPOLOGY_RING_CONFIG_ARRAY, "rings", "Array of ring configurations"),
+};
+#undef add_cparse
+
+#define add_parse(mtype, field, path, desc)				\
 	add_parser(topology_ctx_t, mtype, false, field, 0, path, desc)
 #define add_cparse(mtype, path, desc)					\
 	add_complex_parser(topology_ctx_t, mtype, false, path, desc)
@@ -10516,6 +10652,7 @@ static const parser_t PARSER_ARRAY(TOPOLOGY_CONF)[] = {
 	add_parse(BOOL, cluster_default, "cluster_default", "topology configuration used outside the context of partitions"),
 	add_cparse(TOPOLOGY_BLOCK, "block", "topology/block plugin configuration, mutually exclusive with tree and default"),
 	add_cparse(TOPOLOGY_FLAT, "flat", "topology/flat plugin, mutually exclusive with tree and block"),
+	add_cparse(TOPOLOGY_RING, "ring", "topology/ring plugin configuration, mutually exclusive with block, tree and flat"),
 	add_cparse(TOPOLOGY_TREE, "tree", "topology/tree plugin configuration, mutually exclusive with block and default"),
 };
 #undef add_cparse
@@ -10628,6 +10765,7 @@ static const parser_t PARSER_ARRAY(NAMESPACE_CONF)[] = {
 	add_parse(UINT32, clonensscript_wait, "clone_ns_script_wait", "The number of seconds to wait for the clone_ns_script to complete before considering the script failed. The default value is 10 seconds."),
 	add_parse(UINT32, clonensepilog_wait, "clone_ns_epilog_wait", "The number of seconds to wait for the clone_ns_epilog to complete before considering the script failed. The default value is 10 seconds."),
 	add_parse(STRING, dirs, "dirs", "A list of mount points separated with commas to create private mounts for. This parameter is optional and if not specified it defaults to \"/tmp,/dev/shm\". NOTE: /dev/shm has special handling, and instead of a bind mount is always a fresh tmpfs filesystem. NOTE: When CLONE_NEWPID is specified, a unique /proc filesystem for the container will be mounted automatically."),
+	add_parse(BOOL, disable_bpf_token, "disable_bpf_token", "Specifying disable_bpf_token=true will remove the requirement for bpf tokens on systems that don't support them. When set, it is possible that device constraints will only apply at the job level. This parameter is optional."),
 	add_parse(STRING, initscript, "init_script", "Specify fully qualified pathname of an optional initialization script. This script is run before the namespace construction of a job. It can be used to make the job join additional namespaces prior to the construction of /tmp namespace or it can be used for any site-specific setup. This parameter is optional. "),
 	add_parse(BOOL, shared, "shared", "Specifying Shared=true will propagate new mounts between the job specific filesystem namespace and the root filesystem namespace, enable using autofs on the node. This parameter is optional. "),
 	add_parse(STRING, usernsscript, "user_ns_script", "Specifies the location of a script that will perform the user namespace setup. This script runs first when setting up the namespace. The environment variable \"SLURM_NS_PID\" is provided to allow constructing the path to the various map files that this script could write to. If not specified, every user and group will be mapped."),
@@ -11307,9 +11445,11 @@ static const parser_t parsers[] = {
 	addpca(TOPOLOGY_CONF_ARRAY, TOPOLOGY_CONF, topology_ctx_array_t, NEED_NONE, "Topology configuration array"),
 	addpcp(TOPOLOGY_TREE, TOPOLOGY_TREE_CONFIG_PTR, topology_tree_config_t *, NEED_NONE, "topology/tree plugin configuration"),
 	addpcp(TOPOLOGY_BLOCK, TOPOLOGY_BLOCK_CONFIG_PTR, topology_block_config_t *, NEED_NONE, "topology/block plugin configuration"),
+	addpcp(TOPOLOGY_RING, TOPOLOGY_RING_CONFIG_PTR, topology_ring_config_t *, NEED_NONE, "topology/ring plugin configuration"),
 	addpcp(TOPOLOGY_FLAT, BOOL, bool, NEED_NONE, "topology/flat plugin"),
 	addpca(TOPOLOGY_TREE_CONFIG_ARRAY, SWITCH_CONFIG, topology_tree_config_t, NEED_NONE, "Array of switch configurations"),
 	addpca(TOPOLOGY_BLOCK_CONFIG_ARRAY, BLOCK_CONFIG, topology_block_config_t, NEED_NONE, "Array of block configurations"),
+	addpca(TOPOLOGY_RING_CONFIG_ARRAY, RING_CONFIG, topology_ring_config_t, NEED_NONE, "Array of ring configurations"),
 	addpcp(NAMESPACE_NODE_CONF_COMPLEX, NAMESPACE_CONF_PTR, ns_node_conf_t, NEED_NONE, "Namespace node specific configuration"),
 
 	/* NULL terminated model parsers */
@@ -11459,8 +11599,10 @@ static const parser_t parsers[] = {
 	addpap(TOPOLOGY_CONF, topology_ctx_t, NULL, (parser_free_func_t) free_topology_ctx),
 	addpap(TOPOLOGY_TREE_CONFIG, topology_tree_config_t, NULL, (parser_free_func_t) free_topology_tree_config),
 	addpap(TOPOLOGY_BLOCK_CONFIG, topology_block_config_t, NULL, (parser_free_func_t) free_topology_block_config),
+	addpap(TOPOLOGY_RING_CONFIG, topology_ring_config_t, NULL, (parser_free_func_t) free_topology_ring_config),
 	addpap(SWITCH_CONFIG, slurm_conf_switches_t, NULL, (parser_free_func_t) free_switch_conf),
 	addpap(BLOCK_CONFIG, slurm_conf_block_t, NULL, (parser_free_func_t) free_block_conf),
+	addpap(RING_CONFIG, slurm_conf_ring_t, NULL, (parser_free_func_t) free_ring_conf),
 	addpap(H_RESOURCE, hierarchical_resource_t, NULL, FREE_FUNC(H_RESOURCE)),
 	addpap(H_LAYER, hierarchy_layer_t, NULL, FREE_FUNC(H_LAYER)),
 	addpap(H_VARIABLE, hres_variable_t, NULL, hres_variable_free),

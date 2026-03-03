@@ -13,6 +13,7 @@ srun_SOURCES = \
 	launch.c launch.h \
 	multi_prog.c multi_prog.h \
 	opt.c opt.h \
+	signals.c \
 	srun.c \
 	srun_job.c srun_job.h \
 	srun_pty.c srun_pty.h \

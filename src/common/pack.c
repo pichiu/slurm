@@ -73,7 +73,7 @@ strong_alias(create_shadow_buf,	slurm_create_shadow_buf);
 strong_alias(free_buf,		slurm_free_buf);
 strong_alias(grow_buf,		slurm_grow_buf);
 strong_alias(init_buf,		slurm_init_buf);
-strong_alias(xfer_buf_data,	slurm_xfer_buf_data);
+strong_alias(xfer_buf_data_ptr, slurm_xfer_buf_data_ptr);
 strong_alias(pack_time,		slurm_pack_time);
 strong_alias(unpack_time,	slurm_unpack_time);
 strong_alias(packfloat, 	slurm_packfloat);
@@ -274,6 +274,30 @@ buf_t *init_buf(uint32_t size)
 	return my_buf;
 }
 
+extern void assign_buf(buf_t *buf, char **data_ptr, uint32_t bytes)
+{
+	void *data = *data_ptr;
+
+	*data_ptr = NULL;
+
+	xassert(buf->magic == BUF_MAGIC);
+
+	if (buf->shadow) {
+		/* do nothing */
+	} else if (buf->mmaped) {
+		munmap(buf->head, buf->size);
+	} else {
+		xfree(buf->head);
+	}
+
+	*buf = (buf_t) {
+		.magic = BUF_MAGIC,
+		.head = data,
+		.size = xsize(data),
+		.processed = bytes,
+	};
+}
+
 extern buf_t *try_init_buf(uint32_t size)
 {
 	buf_t *buf;
@@ -309,11 +333,14 @@ extern buf_t *try_init_buf(uint32_t size)
 	return buf;
 }
 
-/* xfer_buf_data - return a pointer to the buffer's data and release the
+/* xfer_buf_data_ptr - return a pointer to the buffer's data and release the
  * buffer's structure */
-void *xfer_buf_data(buf_t *my_buf)
+extern void *xfer_buf_data_ptr(buf_t **my_buf_ptr)
 {
-	void *data_ptr;
+	buf_t *my_buf = NULL;
+	void *data_ptr = NULL;
+
+	SWAP(*my_buf_ptr, my_buf);
 
 	xassert(my_buf->magic == BUF_MAGIC);
 

@@ -81,9 +81,9 @@ static const char *tags[] = {
 	NULL
 };
 
-#define OP_FLAGS                                          \
-	(OP_BIND_DATA_PARSER | OP_BIND_OPENAPI_RESP_FMT | \
-	 OP_BIND_REQUIRE_SLURMDBD)
+#define OP_FLAGS \
+	(OPENAPI_BIND_DATA_PARSER | OPENAPI_BIND_OPENAPI_RESP_FMT | \
+	 OPENAPI_BIND_REQUIRE_SLURMDBD)
 
 const openapi_path_binding_t openapi_paths[] = {
 	{

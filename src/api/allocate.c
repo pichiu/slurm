@@ -94,7 +94,7 @@ static void _destroy_allocation_response_socket(listen_t *listen);
 static void _wait_for_allocation_response(slurm_step_id_t *step_id,
 					  const listen_t *listen,
 					  uint16_t msg_type, int timeout,
-					  void **resp);
+					  void **resp, int interrupt_fd);
 static int _job_will_run_cluster(job_desc_msg_t *req,
 				 will_run_response_msg_t **will_run_resp,
 				 slurmdb_cluster_rec_t *cluster);
@@ -159,6 +159,8 @@ slurm_allocate_resources (job_desc_msg_t *req,
  *      the controller will put the job in the PENDING state.  If
  *      pending callback is not NULL, it will be called with the job_id
  *      of the pending job as the sole parameter.
+ * IN interrupt_fd - If data can be read from this fd (POLLIN), then this
+ *	function will immediately stop blocking and return.
  *
  * RET allocation structure on success, NULL on error set errno to
  *	indicate the error (errno will be ETIMEDOUT if the timeout is reached
@@ -167,7 +169,7 @@ slurm_allocate_resources (job_desc_msg_t *req,
  */
 resource_allocation_response_msg_t *slurm_allocate_resources_blocking(
 	const job_desc_msg_t *user_req, time_t timeout,
-	void (*pending_callback)(slurm_step_id_t *step_id))
+	void (*pending_callback)(slurm_step_id_t *step_id), int interrupt_fd)
 {
 	int rc;
 	slurm_msg_t req_msg;
@@ -261,7 +263,7 @@ resource_allocation_response_msg_t *slurm_allocate_resources_blocking(
 				pending_callback(&step_id);
 			_wait_for_allocation_response(
 				&step_id, listen, RESPONSE_RESOURCE_ALLOCATION,
-				timeout, (void **) &resp);
+				timeout, (void **) &resp, interrupt_fd);
 			/* If NULL, we didn't get the allocation in
 			   the time desired, so just free the job id */
 			if ((resp == NULL) && (errno != ESLURM_ALREADY_DONE)) {
@@ -414,7 +416,7 @@ static int _fed_job_will_run(job_desc_msg_t *req,
 		load_args->req           = req;
 		load_args->resp_msg_list = resp_msg_list;
 		load_args->will_run_rc = &will_run_rc;
-		slurm_thread_create(&load_thread[pthread_count],
+		slurm_thread_create(NULL, &load_thread[pthread_count],
 				    _load_willrun_thread, load_args);
 		pthread_count++;
 	}
@@ -475,6 +477,8 @@ static void _het_job_alloc_test(list_t *resp, uint32_t *node_cnt,
  *      the controller will put the job in the PENDING state.  If
  *      pending callback is not NULL, it will be called with the job_id
  *      of the pending job as the sole parameter.
+ * IN interrupt_fd - If data can be read from this fd (POLLIN), then this
+ *	function will immediately stop blocking and return.
  *
  * RET List of allocation structures on success, NULL on error set errno to
  *	indicate the error (errno will be ETIMEDOUT if the timeout is reached
@@ -483,7 +487,7 @@ static void _het_job_alloc_test(list_t *resp, uint32_t *node_cnt,
  */
 list_t *slurm_allocate_het_job_blocking(
 	list_t *job_req_list, time_t timeout,
-	void (*pending_callback)(slurm_step_id_t *step_id))
+	void (*pending_callback)(slurm_step_id_t *step_id), int interrupt_fd)
 {
 	int rc;
 	slurm_msg_t req_msg;
@@ -577,7 +581,7 @@ list_t *slurm_allocate_het_job_blocking(
 				pending_callback(&step_id);
 			_wait_for_allocation_response(
 				&step_id, listen, RESPONSE_HET_JOB_ALLOCATION,
-				timeout, (void **) &resp);
+				timeout, (void **) &resp, interrupt_fd);
 			/* If NULL, we didn't get the allocation in
 			 * the time desired, so just free the job id */
 			if ((resp == NULL) && (errno != ESLURM_ALREADY_DONE)) {
@@ -1400,7 +1404,7 @@ static int _handle_msg(slurm_msg_t *msg, uint16_t msg_type, void **resp,
 static int _accept_msg_connection(int listen_fd, uint16_t msg_type, void **resp,
 				  uint32_t job_id)
 {
-	void *conn = NULL;
+	conn_t *conn = NULL;
 	slurm_msg_t  *msg = NULL;
 	slurm_addr_t cli_addr;
 	int          rc = 0;
@@ -1438,10 +1442,13 @@ static int _accept_msg_connection(int listen_fd, uint16_t msg_type, void **resp,
 /* Wait up to sleep_time for RPC from slurmctld indicating resource allocation
  * has occurred.
  * IN sleep_time: delay in seconds (0 means unbounded wait)
+ * IN interrupt_fd - If data can be read from this fd (POLLIN), then this
+ *	function will immediately stop blocking and return.
  * RET -1: error, 0: timeout, 1:ready to read */
-static int _wait_for_alloc_rpc(const listen_t *listen, int sleep_time)
+static int _wait_for_alloc_rpc(const listen_t *listen, int sleep_time,
+			       int interrupt_fd)
 {
-	struct pollfd fds[1];
+	struct pollfd fds[2];
 	int rc;
 	int timeout_ms;
 
@@ -1453,13 +1460,15 @@ static int _wait_for_alloc_rpc(const listen_t *listen, int sleep_time)
 
 	fds[0].fd = listen->fd;
 	fds[0].events = POLLIN;
+	fds[1].fd = interrupt_fd;
+	fds[1].events = POLLIN;
 
 	if (sleep_time != 0)
 		timeout_ms = sleep_time * 1000;
 	else
 		timeout_ms = -1;
 
-	while ((rc = poll(fds, 1, timeout_ms)) < 0) {
+	while ((rc = poll(fds, 2, timeout_ms)) < 0) {
 		switch (errno) {
 		case EAGAIN:
 		case EINTR:
@@ -1477,7 +1486,11 @@ static int _wait_for_alloc_rpc(const listen_t *listen, int sleep_time)
 
 	if (rc == 0) { /* poll timed out */
 		errno = ETIMEDOUT;
-	} else if (fds[0].revents & POLLIN) {
+	} else if (fds[1].revents & (POLLIN | POLLERR | POLLHUP)) {
+		/* poll() was interrupted by interrupt_fd */
+		errno = EINTR;
+		return -1;
+	} else if (fds[0].revents & (POLLIN | POLLERR | POLLHUP)) {
 		return 1;
 	}
 
@@ -1487,14 +1500,15 @@ static int _wait_for_alloc_rpc(const listen_t *listen, int sleep_time)
 static void _wait_for_allocation_response(slurm_step_id_t *step_id,
 					  const listen_t *listen,
 					  uint16_t msg_type, int timeout,
-					  void **resp)
+					  void **resp, int interrupt_fd)
 {
 	int errnum, rc;
 
 	info("job %u queued and waiting for resources", step_id->job_id);
 	*resp = NULL;
 	while (true) {
-		if ((rc = _wait_for_alloc_rpc(listen, timeout)) != 1)
+		if ((rc = _wait_for_alloc_rpc(listen, timeout, interrupt_fd)) !=
+		    1)
 			break;
 
 		if ((rc = _accept_msg_connection(listen->fd, msg_type, resp,
@@ -1503,6 +1517,7 @@ static void _wait_for_allocation_response(slurm_step_id_t *step_id,
 	}
 	if (rc <= 0) {
 		errnum = errno;
+
 		/* Maybe the resource allocation response RPC got lost
 		 * in the mail; surely it should have arrived by now.
 		 * Let's see if the controller thinks that the allocation

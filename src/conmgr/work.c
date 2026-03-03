@@ -539,7 +539,7 @@ static void _probe_verbose(probe_log_t *log)
 	(void) list_for_each_ro(mgr.work, _foreach_log_work, &args);
 }
 
-extern probe_status_t probe_work(probe_log_t *log)
+extern probe_status_t probe_work(probe_log_t *log, void *arg)
 {
 	probe_status_t status = PROBE_RC_UNKNOWN;
 

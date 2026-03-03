@@ -147,6 +147,13 @@
 decl_static_data(usage_txt);
 
 #define SLURMCTLD_CONMGR_DEFAULT_MAX_CONNECTIONS 512
+
+#ifndef MEMORY_LEAK_DEBUG
+#define SLURMCTLD_THREADPOOL_PREALLOCATE 32
+#else
+#define SLURMCTLD_THREADPOOL_PREALLOCATE 2
+#endif
+
 #define MIN_CHECKIN_TIME  3	/* Nodes have this number of seconds to
 				 * check-in before we ping them */
 #define SHUTDOWN_WAIT     2	/* Time to wait for backup server shutdown */
@@ -289,7 +296,7 @@ static void         _restore_job_dependencies(void);
 static void         _run_primary_prog(bool primary_on);
 static void _send_future_cloud_to_db(void);
 static int _service_connection(slurmctld_rpc_t *this_rpc, slurm_msg_t *msg);
-static void _on_extract(conmgr_callback_args_t conmgr_args, void *conn,
+static void _on_extract(conmgr_callback_args_t conmgr_args, conn_t *conn,
 			void *arg);
 static void         _set_work_dir(void);
 static int          _shutdown_backup_controller(void);
@@ -304,9 +311,9 @@ static void _update_pidfile(void);
 static void         _update_qos(slurmdb_qos_rec_t *rec);
 static void _usage(void);
 static void _verify_clustername(void);
-static probe_status_t _probe_listeners(probe_log_t *log);
-static probe_status_t _probe_primary(probe_log_t *log);
-static probe_status_t _probe_reconfig(probe_log_t *log);
+static probe_status_t _probe_listeners(probe_log_t *log, void *arg);
+static probe_status_t _probe_primary(probe_log_t *log, void *arg);
+static probe_status_t _probe_reconfig(probe_log_t *log, void *arg);
 
 static void _send_reconfig_replies(void)
 {
@@ -631,9 +638,9 @@ int main(int argc, char **argv)
 	stepmgr_ops_t stepmgr_ops = { 0 };
 
 	probe_init();
-	probe_register("rpc-listeners", _probe_listeners);
-	probe_register("primary", _probe_primary);
-	probe_register("reconfiguring", _probe_reconfig);
+	probe_register("rpc-listeners", _probe_listeners, NULL);
+	probe_register("primary", _probe_primary, NULL);
+	probe_register("reconfiguring", _probe_reconfig, NULL);
 
 	stepmgr_ops.agent_queue_request = agent_queue_request;
 	stepmgr_ops.find_job = find_job;
@@ -739,6 +746,9 @@ int main(int argc, char **argv)
 			error("daemon(): %m");
 		sched_debug("slurmctld starting");
 	}
+
+	threadpool_init(SLURMCTLD_THREADPOOL_PREALLOCATE,
+			slurm_conf.slurmctld_params);
 
 	if (slurm_conf.slurmctld_params)
 		conmgr_set_params(slurm_conf.slurmctld_params);
@@ -1051,7 +1061,7 @@ int main(int argc, char **argv)
 		/*
 		 * create attached thread for state save
 		 */
-		slurm_thread_create(&slurmctld_config.thread_id_save,
+		slurm_thread_create("sstate", &slurmctld_config.thread_id_save,
 				    slurmctld_state_save, NULL);
 
 		/*
@@ -1062,13 +1072,15 @@ int main(int argc, char **argv)
 		/*
 		 * create attached thread for purging completed job files
 		 */
-		slurm_thread_create(&slurmctld_config.thread_id_purge_files,
+		slurm_thread_create(NULL,
+				    &slurmctld_config.thread_id_purge_files,
 				    _purge_files_thread, NULL);
 
 		/*
 		 * create attached thread for purging completed job files
 		 */
-		slurm_thread_create(&slurmctld_config.thread_id_acct_update,
+		slurm_thread_create(NULL,
+				    &slurmctld_config.thread_id_acct_update,
 				    _acct_update_thread, NULL);
 
 		/*
@@ -1245,7 +1257,8 @@ int main(int argc, char **argv)
 	conmgr_fini();
 	http_fini();
 	http_switch_fini();
-
+	/* Multiple threads never exit naturally during shutdown */
+	threadpool_fini();
 	rate_limit_shutdown();
 	probe_fini();
 	log_fini();
@@ -1535,7 +1548,7 @@ rwfail:
 	(void) close(fd);
 }
 
-static probe_status_t _probe_reconfig(probe_log_t *log)
+static probe_status_t _probe_reconfig(probe_log_t *log, void *arg)
 {
 	probe_status_t status = PROBE_RC_UNKNOWN;
 
@@ -1823,7 +1836,7 @@ extern void listeners_unquiesce(void)
 	slurm_mutex_unlock(&listeners.mutex);
 }
 
-static probe_status_t _probe_listeners(probe_log_t *log)
+static probe_status_t _probe_listeners(probe_log_t *log, void *arg)
 {
 	probe_status_t status = PROBE_RC_UNKNOWN;
 
@@ -1841,7 +1854,7 @@ static probe_status_t _probe_listeners(probe_log_t *log)
 	return status;
 }
 
-static probe_status_t _probe_primary(probe_log_t *log)
+static probe_status_t _probe_primary(probe_log_t *log, void *arg)
 {
 	probe_status_t status = PROBE_RC_UNKNOWN;
 
@@ -1991,7 +2004,7 @@ static int _service_connection(slurmctld_rpc_t *this_rpc, slurm_msg_t *msg)
  * IN conn - pointer to extracted connection
  * IN/OUT arg - pointer to slurm_msg_t
  */
-static void _on_extract(conmgr_callback_args_t conmgr_args, void *conn,
+static void _on_extract(conmgr_callback_args_t conmgr_args, conn_t *conn,
 			void *arg)
 {
 	slurm_msg_t *msg = arg;
@@ -2743,7 +2756,12 @@ static void *_slurmctld_background(void *no_data)
 
 			/* Wait for main sched to release locks */
 			slurm_mutex_lock(&sched_mutex);
-			while (sched_requests || sched_running) {
+			while (sched_alive) {
+				/*
+				 * Wake up _sched_agent() if it is sleeping
+				 * before waiting for it to change state
+				 */
+				slurm_cond_broadcast(&sched_cond);
 				slurm_cond_wait(&sched_cond, &sched_mutex);
 			}
 
@@ -3123,8 +3141,8 @@ extern void ctld_assoc_mgr_init(void)
 	   the database so we can update the assoc_ptr's in the jobs
 	*/
 	if ((running_cache != RUNNING_CACHE_STATE_NOTRUNNING) || num_jobs) {
-		slurm_thread_create(&assoc_cache_thread,
-				    _assoc_cache_mgr, NULL);
+		slurm_thread_create(NULL, &assoc_cache_thread, _assoc_cache_mgr,
+				    NULL);
 	}
 
 }
@@ -3379,8 +3397,8 @@ static void _parse_commandline(int argc, char **argv)
 	}
 
 	opterr = 0;
-	while ((c = getopt_long(argc, argv, "cdDf:hiL:n:rRsvV",
-	       long_options, NULL)) > 0) {
+	while ((c = getopt_long(argc, argv, "cDf:hiL:n:rRsvV", long_options,
+				NULL)) > 0) {
 		switch (c) {
 		case 'c':
 			recover = 0;
@@ -3567,7 +3585,7 @@ static int _shutdown_backup_controller(void)
 		 */
 		if (i < backup_inx)
 			shutdown_arg->shutdown = true;
-		slurm_thread_create_detached(_shutdown_bu_thread,
+		slurm_thread_create_detached(NULL, _shutdown_bu_thread,
 					     shutdown_arg);
 		slurm_mutex_lock(&bu_mutex);
 		bu_thread_cnt++;
