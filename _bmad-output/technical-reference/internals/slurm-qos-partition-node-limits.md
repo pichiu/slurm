@@ -17,39 +17,46 @@ date: 2026-03-06
 
 > 如果 Partition 限制 MaxNodes=5，QOS 允許 MaxNodesPerJob=8，作業請求 10 個節點 — 最終能拿到幾個？
 
-答案取決於 **QOS 是否設定了覆蓋旗標**。這正是本文要拆解的關鍵設計。
+答案取決於 **QOS 是否設定了覆蓋旗標** 以及 **`EnforcePartLimits` 的設定**。這正是本文要拆解的關鍵設計。
 
 ---
 
-## 架構總覽：雙重檢查機制
+## 架構總覽：三階段檢查機制
 
-Slurm 對節點數量限制採用**兩階段檢查**：
+Slurm 對節點數量限制採用**三階段檢查**：
 
 ```mermaid
 flowchart TD
-    A["使用者提交作業\nsbatch --nodes=10"] --> B["第一階段：提交驗證\n_qos_part_check()"]
-    B -->|通過| C["作業進入佇列等待排程"]
-    B -->|拒絕| D["回傳錯誤\nESLURM_INVALID_NODE_COUNT"]
-    C --> E["第二階段：排程決策\nget_node_cnts()"]
+    A["使用者提交作業\nsbatch --nodes=10"] --> B["第一階段：提交驗證\n_part_access_check() → _qos_part_check()"]
+    B --> EPL{"EnforcePartLimits\n設定值？"}
+    EPL -->|"ALL 或 YES"| D["回傳錯誤，拒絕提交\nESLURM_INVALID_NODE_COUNT"]
+    EPL -->|"NO（預設）"| C["忽略錯誤，作業進入佇列"]
+    EPL -->|"ANY（多 partition）"| ANY["至少一個 partition 通過即可"]
+    ANY --> C
+    C --> SC["第二階段：排程器檢查\njob_limits_check() → _part_access_check()"]
+    SC -->|不通過| PEND["作業保持 PENDING\nReason=PartitionNodeLimit"]
+    SC -->|通過| E["第三階段：排程決策\nget_node_cnts()"]
     E --> F["計算最終 max_nodes"]
     F --> G["acct_policy_get_max_nodes()\n會計限制再次約束"]
     G --> H["最終分配節點數"]
+    PEND -.->|"條件改變後\n重新檢查"| SC
 ```
 
-**為什麼需要兩階段？**
+**為什麼需要三階段？**
 
-- **提交階段**：快速拒絕明顯不合法的請求，避免浪費佇列資源
-- **排程階段**：精確計算實際可用節點數，考慮即時的會計政策狀態
+- **提交階段**：根據 `EnforcePartLimits` 決定是否立即拒絕不合法的請求
+- **排程器檢查階段**：對已入佇列的作業持續驗證，設定 pending reason
+- **排程決策階段**：精確計算實際可用節點數，考慮即時的會計政策狀態
 
 ---
 
-## 第一階段：提交驗證 (`_qos_part_check`)
+## 第一階段：提交驗證
+
+### `_qos_part_check()` — 節點限制檢查
 
 **原始碼位置**：`src/slurmctld/job_mgr.c:6395-6443`
 
-### 運作邏輯
-
-當作業提交時，`_qos_part_check()` 對 Partition 限制進行閘門式檢查：
+`_qos_part_check()` 負責比較作業請求與 Partition 的節點限制：
 
 ```c
 // 檢查最大節點數
@@ -57,11 +64,39 @@ if ((part_ptr->state_up & PARTITION_SCHED) &&
     (qos_part_check->max_nodes != NO_VAL) &&
     (qos_part_check->max_nodes > part_ptr->max_nodes) &&
     (!qos_ptr || !(qos_ptr->flags & QOS_FLAG_PART_MAX_NODE))) {
-    // 拒絕！作業請求超過 Partition 上限
     qos_part_check->error_code = ESLURM_INVALID_NODE_COUNT;
     return -1;
 }
 ```
+
+### `_valid_job_part()` — 決定是否真正拒絕
+
+**原始碼位置**：`src/slurmctld/job_mgr.c:6748-6813`
+
+`_qos_part_check()` 設定的錯誤碼**並不一定導致作業被拒絕**。外層的 `_valid_job_part()` 根據 `EnforcePartLimits` 決定最終行為：
+
+```c
+rc = _part_access_check(part_ptr, job_desc, req_bitmap,
+                         submit_uid, qos_ptr, qos_ptr_list,
+                         assoc_ptr ? assoc_ptr->acct : NULL);
+if ((rc != SLURM_SUCCESS) &&
+    ((rc == ESLURM_ACCESS_DENIED) ||
+     (rc == ESLURM_USER_ID_MISSING) ||
+     slurm_conf.enforce_part_limits))   // ← 關鍵條件！
+    goto fini;
+/* Enforce Part Limit = no */
+rc = SLURM_SUCCESS;                     // ← 預設：忽略錯誤，讓作業進入佇列
+```
+
+### `EnforcePartLimits` 對提交行為的影響
+
+| `EnforcePartLimits` 值 | 預設？ | 超過 Partition MaxNodes 時的提交結果 |
+|---|---|---|
+| `NO`（預設值） | **是** | 作業被接受，進入佇列等待 |
+| `YES` / `ALL` | 否 | 作業被**立即拒絕** |
+| `ANY`（多 partition） | 否 | 至少一個 partition 通過即接受 |
+
+**重要**：`EnforcePartLimits` 的預設值為 `NO`（`src/common/read_config.c:2798`），這意味著**在預設配置下，超過 Partition 節點限制的作業不會在提交時被拒絕**。
 
 ### 判斷流程
 
@@ -71,21 +106,80 @@ flowchart TD
     B -->|否| PASS["通過檢查"]
     B -->|是| C{"QOS 有設定\nPartitionMaxNodes flag?"}
     C -->|有| PASS
-    C -->|沒有| REJECT["拒絕提交\nESLURM_INVALID_NODE_COUNT"]
+    C -->|沒有| ERR["_qos_part_check 回傳錯誤"]
+    ERR --> EPL{"EnforcePartLimits?"}
+    EPL -->|"YES / ALL"| REJECT["拒絕提交\nESLURM_INVALID_NODE_COUNT"]
+    EPL -->|"NO（預設）"| ACCEPT["忽略錯誤\n作業進入佇列"]
 ```
 
 ### 關鍵觀察
 
-這個階段**只檢查 Partition 限制**，還不涉及 QOS 自身的資源配額（MaxNodesPerJob 等）。它是一個純粹的「門禁」：
-
-- 沒有 flag → Partition 限制是硬性上限，超過直接拒絕
-- 有 flag → 放行，讓排程階段做更精確的判斷
-
-對 `min_nodes` 也有相同的對稱檢查（使用 `QOS_FLAG_PART_MIN_NODE`）。
+- `_qos_part_check()` 本身只負責**檢測**違規，不負責決定是否拒絕
+- 最終的拒絕/接受由 `_valid_job_part()` 根據 `EnforcePartLimits` 決定
+- 預設配置下（`EnforcePartLimits=NO`），只有 `ESLURM_ACCESS_DENIED` 和 `ESLURM_USER_ID_MISSING` 會導致提交被拒絕，節點數超限**不會**
+- 對 `min_nodes` 也有相同的對稱檢查（使用 `QOS_FLAG_PART_MIN_NODE`）
 
 ---
 
-## 第二階段：排程決策 (`get_node_cnts`)
+## 第二階段：排程器持續檢查 (`job_limits_check`)
+
+**原始碼位置**：`src/slurmctld/job_mgr.c:6953-7030`
+
+當作業已在佇列中，排程器在每個排程週期透過 `_job_runnable_test2()` 呼叫 `job_limits_check()` 來持續驗證作業是否仍然滿足 partition 限制。
+
+```c
+// job_scheduler.c:409 — 排程器呼叫入口
+reason = job_limits_check(&job_ptr, check_min_time);
+```
+
+`job_limits_check()` 會重新呼叫 `_part_access_check()`（與提交階段相同的函式），但這次**不受 `EnforcePartLimits` 影響**，直接將結果轉為 pending reason：
+
+```c
+if ((rc = _part_access_check(part_ptr, &job_desc, NULL,
+                              job_ptr->user_id, qos_ptr,
+                              NULL, job_ptr->account))) {
+    switch (rc) {
+    case ESLURM_INVALID_NODE_COUNT:
+        fail_reason = WAIT_PART_NODE_LIMIT;   // → PartitionNodeLimit
+        break;
+    case ESLURM_INVALID_TIME_LIMIT:
+        if (job_ptr->limit_set.time != ADMIN_SET_LIMIT)
+            fail_reason = WAIT_PART_TIME_LIMIT;
+        break;
+    default:
+        fail_reason = WAIT_PART_CONFIG;
+        break;
+    }
+}
+```
+
+排程器根據回傳的 reason 決定作業狀態：
+
+```c
+// job_scheduler.c:409-418 — _job_runnable_test2()
+reason = job_limits_check(&job_ptr, check_min_time);
+if ((reason != job_ptr->state_reason) && ...) {
+    job_ptr->state_reason = reason;    // 設定 pending reason
+}
+if (reason != WAIT_NO_REASON)
+    return false;                      // 作業不可排程
+```
+
+**這就是為什麼你在 25.11.3 上觀察到的行為是：作業被接受進入佇列，以 PENDING 狀態等待，Reason 標記為 `PartitionNodeLimit`。**
+
+### 排程器檢查的特殊之處
+
+| 特性 | 提交階段 | 排程器檢查階段 |
+|---|---|---|
+| 呼叫函式 | `_part_access_check()` | `_part_access_check()`（相同） |
+| 受 `EnforcePartLimits` 影響 | **是** | **否** |
+| 失敗結果 | 拒絕提交或忽略 | 設定 pending reason |
+| 執行時機 | 一次（提交時） | 每個排程週期持續檢查 |
+| 條件改善後 | N/A | 自動清除 reason，允許排程 |
+
+---
+
+## 第三階段：排程決策 (`get_node_cnts`)
 
 **原始碼位置**：`src/slurmctld/node_scheduler.c:3144-3203`
 
@@ -224,7 +318,7 @@ flowchart LR
 
 ## 完整決策流程圖
 
-以下是一個作業從提交到最終節點分配的完整流程：
+以下是一個作業從提交到最終節點分配的完整流程（假設預設配置 `EnforcePartLimits=NO`）：
 
 ```mermaid
 flowchart TD
@@ -235,13 +329,23 @@ flowchart TD
         S1 -->|否| S_PASS["通過"]
         S1 -->|是| S2{"QOS premium 有\nPartitionMaxNodes?"}
         S2 -->|有| S_PASS
-        S2 -->|沒有| S_REJECT["拒絕提交"]
+        S2 -->|沒有| S3{"EnforcePartLimits?"}
+        S3 -->|"YES / ALL"| S_REJECT["拒絕提交"]
+        S3 -->|"NO（預設）"| S_PASS
     end
 
     S_PASS --> QUEUE["進入佇列"]
-    QUEUE --> SCHED
+    QUEUE --> SCHED_CHK
 
-    subgraph sched_phase["第二階段：排程決策"]
+    subgraph sched_check_phase["第二階段：排程器持續檢查"]
+        SC1{"job_limits_check()\n節點數超過 Partition?"}
+        SC1 -->|是| SC_PEND["PENDING\nReason=PartitionNodeLimit"]
+        SC1 -->|否| SC_PASS["通過，進入排程決策"]
+    end
+
+    SC_PASS --> SCHED
+
+    subgraph sched_phase["第三階段：排程決策"]
         direction TB
         G1{"QOS 有\nPartitionMaxNodes?"}
         G1 -->|有| G_OVERRIDE["max = Job請求(10)\n無視 Partition"]
@@ -255,6 +359,7 @@ flowchart TD
     end
 
     G_FINAL --> RESULT["最終分配節點數"]
+    SC_PEND -.->|"Partition 限制變更後\n重新檢查"| SC1
 ```
 
 ---
@@ -269,14 +374,16 @@ flowchart TD
 
 ### 最大節點數情境
 
-| 情境 | Partition Max | QOS MaxNodes/Job | QOS Flag | 提交結果 | 排程 max_nodes |
-|---|---|---|---|---|---|
-| 1. 預設，QOS 較寬 | 5 | 8 | 無 | 拒絕（10 > 5） | N/A |
-| 2. 預設，Job 請求合法 (`-N 4`) | 5 | 8 | 無 | 通過 | MIN(4, 5) = 4，再 MIN(4, 8) = **4** |
-| 3. 預設，QOS 較嚴 (`-N 4`) | 5 | 3 | 無 | 通過 | MIN(4, 5) = 4，再 MIN(4, 3) = **3** |
-| 4. 覆蓋，QOS 較寬 | 5 | 8 | `PartitionMaxNodes` | 通過 | Job=10，再 MIN(10, 8) = **8** |
-| 5. 覆蓋，QOS 較嚴 | 5 | 3 | `PartitionMaxNodes` | 通過 | Job=10，再 MIN(10, 3) = **3** |
-| 6. 覆蓋，QOS 無限制 | 5 | 無限制 | `PartitionMaxNodes` | 通過 | Job=10，再 MIN(10, INF) = **10** |
+> 以下假設 `EnforcePartLimits=NO`（預設值）。若設為 `YES`/`ALL`，情境 1 會在提交時被直接拒絕。
+
+| 情境 | Partition Max | QOS MaxNodes/Job | QOS Flag | 提交結果 | 排程器狀態 | 排程 max_nodes |
+|---|---|---|---|---|---|---|
+| 1. 預設，QOS 較寬 | 5 | 8 | 無 | 接受 | PENDING (PartitionNodeLimit) | 無法排程 |
+| 2. 預設，Job 請求合法 (`-N 4`) | 5 | 8 | 無 | 接受 | 可排程 | MIN(4, 5) = 4，再 MIN(4, 8) = **4** |
+| 3. 預設，QOS 較嚴 (`-N 4`) | 5 | 3 | 無 | 接受 | 可排程 | MIN(4, 5) = 4，再 MIN(4, 3) = **3** |
+| 4. 覆蓋，QOS 較寬 | 5 | 8 | `PartitionMaxNodes` | 接受 | 可排程 | Job=10，再 MIN(10, 8) = **8** |
+| 5. 覆蓋，QOS 較嚴 | 5 | 3 | `PartitionMaxNodes` | 接受 | 可排程 | Job=10，再 MIN(10, 3) = **3** |
+| 6. 覆蓋，QOS 無限制 | 5 | 無限制 | `PartitionMaxNodes` | 接受 | 可排程 | Job=10，再 MIN(10, INF) = **10** |
 
 ### 最小節點數情境
 
@@ -433,8 +540,12 @@ flowchart LR
 
 | 函式 | 檔案位置 | 職責 |
 |---|---|---|
-| `_qos_part_check()` | `src/slurmctld/job_mgr.c:6395` | 提交階段 Partition 限制驗證 |
-| `get_node_cnts()` | `src/slurmctld/node_scheduler.c:3144` | 排程階段節點數計算 |
+| `_qos_part_check()` | `src/slurmctld/job_mgr.c:6395` | 檢查作業請求是否超過 Partition 節點限制 |
+| `_part_access_check()` | `src/slurmctld/job_mgr.c:6452` | 整合 Partition 存取權限與限制檢查 |
+| `_valid_job_part()` | `src/slurmctld/job_mgr.c:6748` | 根據 `EnforcePartLimits` 決定是否拒絕提交 |
+| `job_limits_check()` | `src/slurmctld/job_mgr.c:6953` | 排程器持續檢查，設定 pending reason（如 `PartitionNodeLimit`） |
+| `_job_runnable_test2()` | `src/slurmctld/job_scheduler.c:404` | 排程器呼叫 `job_limits_check()` 的入口 |
+| `get_node_cnts()` | `src/slurmctld/node_scheduler.c:3144` | 排程決策階段節點數計算 |
 | `acct_policy_get_max_nodes()` | `src/slurmctld/acct_policy.c:4402` | 會計政策最大節點數查詢 |
 | `acct_policy_set_qos_order()` | `src/slurmctld/acct_policy.c:5254` | 雙 QOS 優先順序決策 |
 | `QOS_FLAG_*` 定義 | `slurm/slurmdb.h:126-133` | QOS 旗標位元定義 |
