@@ -13,7 +13,7 @@ date: 2026-03-06
 
 本文深入分析 Slurm 原始碼中這個看似矛盾、實則設計精巧的雙重限制機制。
 
-### 核心問題
+**核心問題**
 
 > 如果 Partition 限制 MaxNodes=5，QOS 允許 MaxNodesPerJob=8，作業請求 10 個節點 — 最終能拿到幾個？
 
@@ -161,14 +161,14 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    subgraph QOS_LIMITS["QOS 限制層"]
+    subgraph qos_limits["QOS 限制層"]
         PA["MaxTRESPerAccount\n(每帳戶上限)"]
         PJ["MaxTRESPerJob\n(每作業上限)"]
         PU["MaxTRESPerUser\n(每使用者上限)"]
         GRP["GrpTRES\n(群組總量上限)"]
     end
 
-    subgraph ASSOC_LIMITS["Association 限制層"]
+    subgraph assoc_limits["Association 限制層"]
         A_GRP["GrpTRES\n(關聯群組上限)"]
         A_MAX["MaxTRES\n(關聯個別上限)"]
     end
@@ -205,19 +205,19 @@ if (job_ptr->qos_ptr->flags & QOS_FLAG_OVER_PART_QOS) {
 
 ```mermaid
 flowchart LR
-    subgraph 預設順序
+    subgraph default_order["預設順序"]
         direction TB
         P1["1st: Partition QOS\n（主要）"]
         P2["2nd: Job QOS\n（填補未設定項）"]
     end
 
-    subgraph OverPartQOS
+    subgraph over_part_qos["OverPartQOS 模式"]
         direction TB
         O1["1st: Job QOS\n（主要）"]
         O2["2nd: Partition QOS\n（填補未設定項）"]
     end
 
-    預設順序 -.->|"Job QOS 設定\nOverPartQOS flag"| OverPartQOS
+    default_order -.->|"Job QOS 設定\nOverPartQOS flag"| over_part_qos
 ```
 
 ---
@@ -230,7 +230,7 @@ flowchart LR
 flowchart TD
     USER["使用者提交\nsbatch -N 10 -p compute -q premium"] --> SUBMIT
 
-    subgraph SUBMIT["第一階段：提交驗證"]
+    subgraph submit_phase["第一階段：提交驗證"]
         S1{"10 > Partition\nMaxNodes?"}
         S1 -->|否| S_PASS["通過"]
         S1 -->|是| S2{"QOS premium 有\nPartitionMaxNodes?"}
@@ -241,7 +241,7 @@ flowchart TD
     S_PASS --> QUEUE["進入佇列"]
     QUEUE --> SCHED
 
-    subgraph SCHED["第二階段：排程決策"]
+    subgraph sched_phase["第二階段：排程決策"]
         direction TB
         G1{"QOS 有\nPartitionMaxNodes?"}
         G1 -->|有| G_OVERRIDE["max = Job請求(10)\n無視 Partition"]
@@ -349,7 +349,7 @@ sacctmgr show qos format=name,flags,MaxTRESPerJob
 
 輸出範例：
 
-```
+```text
       Name                Flags    MaxTRES
 ---------- -------------------- ----------
   standard                             node=8
@@ -410,7 +410,7 @@ sacctmgr add qos student_homework
 
 ```mermaid
 flowchart LR
-    subgraph 安全層級["限制層級（由外到內）"]
+    subgraph limit_layers["限制層級（由外到內）"]
         direction TB
         L1["最外層：Partition 物理限制\n（可被 QOS flag 覆蓋）"]
         L2["中間層：QOS 資源配額\n（永遠生效）"]
