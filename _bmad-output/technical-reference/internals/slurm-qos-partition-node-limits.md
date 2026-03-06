@@ -388,16 +388,122 @@ sacctmgr add qos strict MaxTRESPerUser=cpu=2 flags=DenyOnLimit
 # 結果：提交 -n 8 的作業會被立即拒絕
 ```
 
-### `EnforcePartLimits` vs `DenyOnLimit` — 兩個獨立的維度
+### `EnforcePartLimits` vs `AccountingStorageEnforce` vs `DenyOnLimit` — 三個獨立的維度
 
-| 控制項 | 控制機制 | 影響範圍 |
-|---|---|---|
-| **`EnforcePartLimits`** | `slurm.conf` 全域設定 | Partition 的 MaxNodes / MinNodes / MaxTime 限制 |
-| **`DenyOnLimit`** | QOS flag（每個 QOS 獨立設定） | QOS 的 MaxTRESPerUser / MaxTRESPerJob / MaxTRESPerAccount / GrpTRES 等 |
+Slurm 的限制檢查機制由三個獨立的設定控制，各自影響不同層面：
 
-兩者完全獨立運作：
-- `EnforcePartLimits=ALL` + 無 `DenyOnLimit`：Partition 限制在提交時拒絕，QOS TRES 限制只在排程時生效
-- `EnforcePartLimits=NO` + 有 `DenyOnLimit`：Partition 限制不在提交時拒絕，QOS TRES 限制在提交時拒絕
+#### `AccountingStorageEnforce` — 會計系統的總開關
+
+**原始碼位置**：`src/common/read_config.c:3420-3479`、`src/common/read_config.h:66-73`
+
+這是一個 bitmask 設定，支援以逗號分隔的多個值：
+
+```c
+#define ACCOUNTING_ENFORCE_ASSOCS  SLURM_BIT(0)  // associations
+#define ACCOUNTING_ENFORCE_LIMITS  SLURM_BIT(1)  // limits
+#define ACCOUNTING_ENFORCE_WCKEYS  SLURM_BIT(2)  // wckeys
+#define ACCOUNTING_ENFORCE_QOS     SLURM_BIT(3)  // qos
+#define ACCOUNTING_ENFORCE_SAFE    SLURM_BIT(4)  // safe
+#define ACCOUNTING_ENFORCE_NO_JOBS SLURM_BIT(5)  // nojobs
+#define ACCOUNTING_ENFORCE_NO_STEPS SLURM_BIT(6) // nosteps
+#define ACCOUNTING_ENFORCE_TRES    SLURM_BIT(7)  // tres
+```
+
+解析邏輯中，高級值會自動包含低級值：
+
+| slurm.conf 設定值 | 自動啟用的 flags |
+|---|---|
+| `associations` | `ASSOCS` |
+| `limits` | `ASSOCS` + `LIMITS` |
+| `safe` | `ASSOCS` + `LIMITS` + `SAFE` |
+| `qos` | `ASSOCS` + `QOS` |
+| `wckeys` | `ASSOCS` + `WCKEYS` |
+| `all` | 所有 flags（但不含 `nojobs`/`nosteps`） |
+
+#### `ACCOUNTING_ENFORCE_LIMITS` — 限制檢查的前置閘門
+
+**`ACCOUNTING_ENFORCE_LIMITS` 是所有 QOS/Association TRES 限制檢查的硬性前提。** 如果沒有設定，整條檢查鏈被完全跳過：
+
+**提交時**（`src/slurmctld/job_mgr.c:7470-7484`）：
+
+```c
+if ((accounting_enforce & ACCOUNTING_ENFORCE_LIMITS) &&    // ← 前置閘門
+    (!acct_policy_validate(job_desc, ...))) {
+    error_code = ESLURM_ACCOUNTING_POLICY;
+    goto cleanup_fail;
+}
+// 沒有 LIMITS flag → 整個 if 被跳過，不呼叫 acct_policy_validate()
+```
+
+**排程時 pre-select**（`src/slurmctld/acct_policy.c:3815-3816`）：
+
+```c
+if (!(accounting_enforce & ACCOUNTING_ENFORCE_LIMITS))
+    return true;    // ← 直接放行，不做任何 QOS 限制檢查
+```
+
+**排程時 post-select**（`src/slurmctld/acct_policy.c:4059-4060`）：
+
+```c
+if (!(accounting_enforce & ACCOUNTING_ENFORCE_LIMITS))
+    return true;    // ← 直接放行
+```
+
+**acct_policy_get_max_nodes**（`src/slurmctld/acct_policy.c:4417-4418`）：
+
+```c
+if (!(accounting_enforce & ACCOUNTING_ENFORCE_LIMITS))
+    return max_nodes_limit;  // ← 回傳無限制值
+```
+
+#### `ACCOUNTING_ENFORCE_SAFE` — 安全限制模式
+
+`safe` 影響排程時的使用量檢查。在 `_validate_tres_usage_limits()` 中（第 1593 行），`safe_limits` 控制是否檢查「請求量 + 已使用量」是否超過限制。
+
+但注意：`MaxTRESPerUser` 的檢查在 `_qos_job_runnable_post_select()` 中被**硬編碼**為 `safe_limits=true`（第 2690 行），不受 `ACCOUNTING_ENFORCE_SAFE` 影響。`ACCOUNTING_ENFORCE_SAFE` 主要影響 `GrpTRES` 和 `GrpTRESRunMins` 等群組使用量的檢查。
+
+#### 三個維度的關係圖
+
+```mermaid
+flowchart TD
+    subgraph layer1["第一層：AccountingStorageEnforce"]
+        ASE{"AccountingStorageEnforce\n包含 limits?"}
+        ASE -->|否| SKIP["所有 QOS/Association\nTRES 限制檢查被跳過\n（提交時和排程時都不檢查）"]
+        ASE -->|是| LAYER2["進入第二層檢查"]
+    end
+
+    subgraph layer2["第二層：提交時 — DenyOnLimit"]
+        DOL{"QOS 有 DenyOnLimit?"}
+        DOL -->|否| ACCEPT["提交通過\n排程時再檢查"]
+        DOL -->|是| STRICT["嚴格檢查所有 TRES 限制\n超限 → 拒絕提交"]
+    end
+
+    subgraph layer3["第三層（獨立）：EnforcePartLimits"]
+        EPL{"EnforcePartLimits?"}
+        EPL -->|NO| PART_SKIP["Partition 限制不在提交時檢查"]
+        EPL -->|"ANY / ALL"| PART_CHECK["Partition 限制在提交時檢查"]
+    end
+
+    LAYER2 --> DOL
+    ASE -.->|"獨立運作\n不互相影響"| EPL
+
+    style SKIP fill:#f66,color:#fff
+    style STRICT fill:#f96,color:#fff
+    style PART_CHECK fill:#69f,color:#fff
+```
+
+#### 完整設定矩陣
+
+| 設定組合 | 提交時 Partition 限制 | 提交時 TRES 限制 | 排程時 TRES 限制 |
+|---|---|---|---|
+| `Enforce=none`, `EPL=NO`, 無 `DenyOnLimit` | 不檢查 | 不檢查 | **不檢查** |
+| `Enforce=limits`, `EPL=NO`, 無 `DenyOnLimit` | 不檢查 | 不檢查 | **檢查** |
+| `Enforce=limits`, `EPL=NO`, 有 `DenyOnLimit` | 不檢查 | **拒絕** | N/A |
+| `Enforce=limits`, `EPL=ALL`, 無 `DenyOnLimit` | **拒絕** | 不檢查 | **檢查** |
+| `Enforce=limits`, `EPL=ALL`, 有 `DenyOnLimit` | **拒絕** | **拒絕** | N/A |
+| `Enforce=none`, `EPL=ALL`, 有 `DenyOnLimit` | **拒絕** | **不檢查** | **不檢查** |
+
+> **關鍵**：最後一行說明 `AccountingStorageEnforce` 不包含 `limits` 時，即使設了 `DenyOnLimit`，TRES 限制也不會被檢查。`DenyOnLimit` 只控制 `_validate_tres_limits_for_qos()` 內部的 `strict_checking`，但**外層的 `ACCOUNTING_ENFORCE_LIMITS` 閘門更早就把整個呼叫擋掉了**。
 
 ---
 
@@ -775,7 +881,9 @@ flowchart LR
 | `_qos_job_runnable_post_select()` | `src/slurmctld/acct_policy.c:2326` | 排程時 QOS TRES 使用量檢查（含 `MaxTRESPerUser`） |
 | `_foreach_valid_part()` | `src/slurmctld/job_mgr.c:6699` | 多 partition 逐一檢查（`ANY` vs `ALL` 差異實現） |
 | `parse_part_enforce_type()` | `src/common/slurm_protocol_defs.c:5661` | `EnforcePartLimits` 設定值解析（`YES`→`ANY`） |
+| `_validate_accounting_storage_enforce()` | `src/common/read_config.c:3420` | `AccountingStorageEnforce` 設定值解析 |
 | `acct_policy_set_qos_order()` | `src/slurmctld/acct_policy.c:5254` | 雙 QOS 優先順序決策 |
+| `ACCOUNTING_ENFORCE_*` 定義 | `src/common/read_config.h:66-73` | 會計強制旗標位元定義 |
 | `QOS_FLAG_*` 定義 | `slurm/slurmdb.h:126-133` | QOS 旗標位元定義 |
 
 ---
