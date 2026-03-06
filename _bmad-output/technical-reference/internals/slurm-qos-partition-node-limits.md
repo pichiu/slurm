@@ -13,6 +13,36 @@ Slurm 中「限制」和「限制是否被強制執行」是兩件不同的事�
 
 本文基於 Slurm 25.11 原始碼，解析這三個維度如何交互。
 
+### 兩種限制來源
+
+Slurm 有兩種不同來源的資源限制，走完全不同的程式碼路徑，受不同的開關控制：
+
+| 限制來源 | 設定方式 | 範例 | 檢查函式 | 控制開關 |
+|---|---|---|---|---|
+| **Partition 限制** | `slurm.conf` 的 Partition 設定 | `PartitionName=compute MaxNodes=5` | `_qos_part_check()` | `EnforcePartLimits` |
+| **QOS TRES 限制** | `sacctmgr` 設定 QOS | `sacctmgr add qos ... MaxTRESPerJob=node=8` | `acct_policy_validate()` | `AccountingStorageEnforce` + `DenyOnLimit` |
+
+兩者都能限制節點數，但走完全不同的路徑。一個作業可能通過 Partition 限制檢查卻被 QOS TRES 限制擋住，反之亦然。
+
+### TRES 是什麼？
+
+**TRES**（Trackable RESources）是 Slurm 的統一資源計量框架，涵蓋 CPU、節點（node）、記憶體（mem）、GPU（gres/gpu）等所有可追蹤資源。QOS 中的限制用 `TRES=值` 格式表示，例如：
+
+- `MaxTRESPerJob=node=8` → 每個作業最多 8 個**節點**
+- `MaxTRESPerUser=cpu=16` → 每個使用者同時最多使用 16 個 **CPU**
+- `MaxTRESPerJob=gres/gpu=4` → 每個作業最多 4 個 **GPU**
+
+### sbatch 參數與 TRES 的對應
+
+| sbatch 參數 | 含義 | 對應 TRES | 適用的 QOS 限制範例 |
+|---|---|---|---|
+| `-N` / `--nodes` | 節點數 | `node` | `MaxTRESPerJob=node=8` |
+| `-n` / `--ntasks` | 任務數（轉換為 min_cpus） | `cpu` | `MaxTRESPerUser=cpu=16` |
+| `--gpus` | GPU 數量 | `gres/gpu` | `MaxTRESPerJob=gres/gpu=4` |
+| `--mem` | 記憶體 | `mem` | `MaxTRESPerJob=mem=64G` |
+
+> **注意**：`-n 8`（8 個 tasks）在未指定 `--cpus-per-task` 時等同請求 8 個 CPU，觸發的是 `cpu` 類型的 TRES 限制，不是 `node` 類型。測試限制時務必確認參數與 TRES 類型的對應。
+
 ---
 
 ## 三個控制維度
@@ -294,7 +324,7 @@ else if (qos_flags & QOS_FLAG_PART_MAX_NODE)
 else
     *max_nodes = MIN(job_max, part_max);             // Case C: 預設取嚴格
 
-// === 步驟 3：會計限制永遠生效 ===
+// === 步驟 3：會計限制（需 AccountingStorageEnforce 包含 limits）===
 acct_max_nodes = acct_policy_get_max_nodes(job_ptr, &wait_reason);
 *max_nodes = MIN(*max_nodes, acct_max_nodes);        // 再取 MIN
 ```
@@ -327,7 +357,7 @@ flowchart TD
 | **預設模式** | QOS 未設 `PartitionMaxNodes` | `MIN(Job, Partition)` | 安全優先，防止超配 |
 | **覆蓋模式** | QOS 已設 `PartitionMaxNodes` | Job 請求值（無視 Partition） | 允許特權 QOS 突破 Partition 限制 |
 
-關鍵設計：**無論哪種模式，會計限制（步驟 3）永遠生效**。覆蓋的是 Partition 限制，不是 QOS 自身的資源配額。
+關鍵設計：**無論哪種模式，只要 `AccountingStorageEnforce` 包含 `limits`，會計限制（步驟 3）都會生效**。QOS flag 覆蓋的是 Partition 限制，不是 QOS 自身的資源配額。
 
 ---
 
@@ -384,14 +414,25 @@ tres_usage = _validate_tres_usage_limits_for_qos(
 
 **原始碼位置**：`src/slurmctld/acct_policy.c:4402-4518`
 
-不管前面怎麼算，排程決策的最後一步永遠要過這一關（前提是 `ACCOUNTING_ENFORCE_LIMITS` 已啟用）。
+不管前面怎麼算，排程決策的最後一步永遠要過這一關（前提是 `AccountingStorageEnforce` 包含 `limits`）。
+
+### `MaxTRESPerJob` vs `MaxTRESPerUser` 的語義差異
+
+這兩種限制雖然都出現在會計限制層，但檢查邏輯有本質不同：
+
+| 限制 | 含義 | 提交時檢查 | 排程時檢查 |
+|---|---|---|---|
+| `MaxTRESPerJob` | 單一作業的上限 | 請求量 > 限制 → 拒絕 | 請求量 > 限制 → hold |
+| `MaxTRESPerUser` | 同一使用者所有 running jobs 的聚合上限 | 請求量 > 限制 → 拒絕 | **請求量 + 該使用者已使用量** > 限制 → hold |
+
+`MaxTRESPerUser` 在排程時是**聚合使用量檢查** — 即使單一作業請求量沒超過限制，但加上使用者其他正在運行的作業後超過了，也會被 hold。例如 `MaxTRESPerUser=cpu=8`，使用者已有一個 6 CPU 的作業在運行，再提交一個 `-n 4` 的作業就會被 hold（6+4=10 > 8）。
 
 ```mermaid
 flowchart TD
     subgraph qos_limits["QOS 限制層"]
         PA["MaxTRESPerAccount\n(每帳戶上限)"]
         PJ["MaxTRESPerJob\n(每作業上限)"]
-        PU["MaxTRESPerUser\n(每使用者上限)"]
+        PU["MaxTRESPerUser\n(每使用者聚合上限)"]
         GRP["GrpTRES\n(群組總量上限)"]
     end
 
