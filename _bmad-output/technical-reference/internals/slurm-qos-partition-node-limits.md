@@ -29,9 +29,12 @@ Slurm 對節點數量限制採用**三階段檢查**：
 flowchart TD
     A["使用者提交作業\nsbatch --nodes=10"] --> B["第一階段：提交驗證\n_part_access_check() → _qos_part_check()"]
     B --> EPL{"EnforcePartLimits\n設定值？"}
-    EPL -->|"ALL 或 YES"| D["回傳錯誤，拒絕提交\nESLURM_INVALID_NODE_COUNT"]
+    EPL -->|"ALL"| D["回傳錯誤，拒絕提交\nESLURM_INVALID_NODE_COUNT"]
     EPL -->|"NO（預設）"| C["忽略錯誤，作業進入佇列"]
-    EPL -->|"ANY（多 partition）"| ANY["至少一個 partition 通過即可"]
+    EPL -->|"YES / ANY\n（單一 partition 時同 ALL）\n（多 partition 時至少一個通過即可）"| ANY{"單一 or\n多 partition?"}
+    ANY -->|單一| D
+    ANY -->|多| ANY2["至少一個通過即可"]
+    ANY2 --> C
     ANY --> C
     C --> SC["第二階段：排程器檢查\njob_limits_check() → _part_access_check()"]
     SC -->|不通過| PEND["作業保持 PENDING\nReason=PartitionNodeLimit"]
@@ -88,28 +91,174 @@ if ((rc != SLURM_SUCCESS) &&
 rc = SLURM_SUCCESS;                     // ← 預設：忽略錯誤，讓作業進入佇列
 ```
 
-### `EnforcePartLimits` 對提交行為的影響
+### `EnforcePartLimits` 設定值解析
 
-| `EnforcePartLimits` 值 | 預設？ | 超過 Partition MaxNodes 時的提交結果 |
+**原始碼位置**：`src/common/slurm_protocol_defs.c:5661-5686`
+
+`EnforcePartLimits` 的設定值在解析時會被映射為三種內部狀態：
+
+```c
+if (!xstrcasecmp(value, "yes")
+    || !xstrcasecmp(value, "up")
+    || !xstrcasecmp(value, "true")
+    || !xstrcasecmp(value, "1") || !xstrcasecmp(value, "any")) {
+    *param = PARTITION_ENFORCE_ANY;      // YES = ANY
+} else if (!xstrcasecmp(value, "no")
+           || !xstrcasecmp(value, "down")
+           || !xstrcasecmp(value, "false")
+           || !xstrcasecmp(value, "0")) {
+    *param = PARTITION_ENFORCE_NONE;     // NO
+} else if (!xstrcasecmp(value, "all")) {
+    *param = PARTITION_ENFORCE_ALL;      // ALL
+}
+```
+
+| slurm.conf 設定值 | 內部常數 | 含義 |
 |---|---|---|
-| `NO`（預設值） | **是** | 作業被接受，進入佇列等待 |
-| `YES` / `ALL` | 否 | 作業被**立即拒絕** |
-| `ANY`（多 partition） | 否 | 至少一個 partition 通過即接受 |
+| `NO` / `false` / `0` / `down` | `PARTITION_ENFORCE_NONE` (0) | 不強制（預設） |
+| **`YES`** / `true` / `1` / `up` / `any` | **`PARTITION_ENFORCE_ANY`** | 至少一個 partition 通過即可 |
+| `ALL` | `PARTITION_ENFORCE_ALL` | 所有 partition 都必須通過 |
 
-**重要**：`EnforcePartLimits` 的預設值為 `NO`（`src/common/read_config.c:2798`），這意味著**在預設配置下，超過 Partition 節點限制的作業不會在提交時被拒絕**。
+> **注意**：`YES` 等同 `ANY`，**不是** `ALL`。這是 Slurm 的設計行為。
 
-### 判斷流程
+### `ANY` vs `ALL`：單一 vs 多 Partition 行為差異
+
+**原始碼位置**：`src/slurmctld/job_mgr.c:6699-6813`
+
+#### 單一 Partition 時：ANY 和 ALL 行為相同
+
+當作業只提交到一個 partition 時，走 `_valid_job_part()` 的 `else` 分支（第 6799-6813 行）：
+
+```c
+rc = _part_access_check(part_ptr, ...);
+if ((rc != SLURM_SUCCESS) &&
+    ((rc == ESLURM_ACCESS_DENIED) ||
+     (rc == ESLURM_USER_ID_MISSING) ||
+     slurm_conf.enforce_part_limits))   // ← 非零即為 true
+    goto fini;
+```
+
+`PARTITION_ENFORCE_ANY` 和 `PARTITION_ENFORCE_ALL` 都是非零值，所以在單一 partition 時**行為完全一致** — 只要檢查失敗就拒絕。
+
+#### 多 Partition 時：核心差異
+
+當作業提交到多個 partition（如 `sbatch -p partA,partB`）時，走 `_foreach_valid_part()` 迴圈（第 6699-6745 行）逐一檢查每個 partition：
+
+```c
+// _foreach_valid_part() — 對每個 partition 執行
+rc = _part_access_check(part_ptr, ...);
+
+if ((rc != SLURM_SUCCESS) &&
+    ((rc == ESLURM_ACCESS_DENIED) ||
+     (rc == ESLURM_USER_ID_MISSING) ||
+     (slurm_conf.enforce_part_limits == PARTITION_ENFORCE_ALL))) {
+    // ALL 模式：任何一個 partition 失敗 → 立即中止迴圈，拒絕提交
+    foreach_valid_part->rc = rc;
+    return -1;
+} else if (rc != SLURM_SUCCESS) {
+    // ANY 模式：記錄錯誤但繼續檢查下一個 partition
+    foreach_valid_part->rc = rc;
+} else {
+    // 此 partition 通過
+    foreach_valid_part->any_check = true;
+}
+
+// ANY 模式：只要找到一個通過的 partition，整體就成功
+if (foreach_valid_part->any_check &&
+    (slurm_conf.enforce_part_limits == PARTITION_ENFORCE_ANY))
+    foreach_valid_part->rc = SLURM_SUCCESS;
+```
+
+迴圈結束後，`_valid_job_part()` 最終裁定（第 6780-6798 行）：
+
+```c
+if (list_is_empty(part_ptr_list) ||
+    (slurm_conf.enforce_part_limits &&
+     (foreach_valid_part.rc != SLURM_SUCCESS))) {
+    if (slurm_conf.enforce_part_limits == PARTITION_ENFORCE_ALL)
+        rc = foreach_valid_part.rc;           // ALL：回傳失敗的具體錯誤
+    else if (slurm_conf.enforce_part_limits ==
+             PARTITION_ENFORCE_ANY && !any_check)
+        rc = foreach_valid_part.rc;           // ANY：全部都失敗才拒絕
+    else
+        rc = ESLURM_PARTITION_NOT_AVAIL;
+    goto fini;
+}
+rc = SLURM_SUCCESS;  /* At least some partition usable */
+```
+
+#### 多 Partition 時的 min/max nodes 聚合邏輯
+
+不論 ANY 或 ALL，多 partition 情境下會聚合所有 partition 的限制（第 6736-6743 行）：
+
+```c
+// 取所有 partition 中最小的 min_nodes
+foreach_valid_part->min_nodes_orig =
+    MIN(foreach_valid_part->min_nodes_orig, part_ptr->min_nodes_orig);
+// 取所有 partition 中最大的 max_nodes
+foreach_valid_part->max_nodes_orig =
+    MAX(foreach_valid_part->max_nodes_orig, part_ptr->max_nodes_orig);
+// 取所有 partition 中最大的 max_time
+foreach_valid_part->max_time =
+    MAX(foreach_valid_part->max_time, part_ptr->max_time);
+```
+
+這意味著後續的節點數/時間驗證（第 6818-6876 行）使用的是**所有 partition 中最寬鬆的限制**。
+
+### 完整行為對照表
+
+| 場景 | `NO` | `ANY`（= `YES`） | `ALL` |
+|---|---|---|---|
+| **單一 partition，檢查失敗** | 忽略，進入佇列 | 拒絕提交 | 拒絕提交 |
+| **多 partition，全部失敗** | 忽略，進入佇列 | 拒絕提交 | 拒絕提交 |
+| **多 partition，部分失敗** | 忽略，進入佇列 | 接受（至少一個通過） | 拒絕提交（第一個失敗即中止） |
+| **多 partition，全部通過** | 接受 | 接受 | 接受 |
+| **排程階段 max_nodes 聚合** | 不適用（不強制） | 取最寬鬆 | 取最寬鬆 |
 
 ```mermaid
 flowchart TD
-    A["作業請求 max_nodes"] --> B{"max_nodes > Partition MaxNodes?"}
-    B -->|否| PASS["通過檢查"]
-    B -->|是| C{"QOS 有設定\nPartitionMaxNodes flag?"}
-    C -->|有| PASS
-    C -->|沒有| ERR["_qos_part_check 回傳錯誤"]
-    ERR --> EPL{"EnforcePartLimits?"}
-    EPL -->|"YES / ALL"| REJECT["拒絕提交\nESLURM_INVALID_NODE_COUNT"]
-    EPL -->|"NO（預設）"| ACCEPT["忽略錯誤\n作業進入佇列"]
+    subgraph single_part["單一 Partition"]
+        SP_CHECK{"partition\n檢查結果？"}
+        SP_CHECK -->|通過| SP_OK["接受"]
+        SP_CHECK -->|失敗| SP_EPL{"EnforcePartLimits?"}
+        SP_EPL -->|NO| SP_ACCEPT["忽略，進入佇列"]
+        SP_EPL -->|"ANY 或 ALL\n（行為相同）"| SP_REJECT["拒絕提交"]
+    end
+
+    subgraph multi_part["多 Partition（如 partA,partB）"]
+        MP_LOOP["逐一檢查每個 partition"]
+        MP_LOOP --> MP_EPL{"EnforcePartLimits?"}
+
+        MP_EPL -->|ALL| MP_ALL{"任一 partition\n失敗？"}
+        MP_ALL -->|是| MP_ALL_REJECT["立即中止\n拒絕提交"]
+        MP_ALL -->|"全部通過"| MP_ALL_OK["接受"]
+
+        MP_EPL -->|ANY| MP_ANY{"至少一個\npartition 通過？"}
+        MP_ANY -->|是| MP_ANY_OK["接受\n（忽略失敗的 partition）"]
+        MP_ANY -->|"全部失敗"| MP_ANY_REJECT["拒絕提交"]
+    end
+```
+
+### 排程階段的 ANY vs ALL 差異
+
+**原始碼位置**：`src/slurmctld/job_mgr.c:3843-3898`
+
+`_select_nodes_base()` 在排程階段也會根據模式做不同處理：
+
+```c
+// ANY 模式：limit check 失敗 → 直接跳過，不嘗試排程
+if ((rc_part_limits != WAIT_NO_REASON) &&
+    (enforce_part_limits == PARTITION_ENFORCE_ANY))
+    return SLURM_ERROR;
+
+// ALL 模式：limit check 失敗 → 記錄但可能仍嘗試其他 partition
+if ((rc_part_limits != WAIT_NO_REASON) &&
+    (enforce_part_limits == PARTITION_ENFORCE_ALL)) {
+    if (rc_part_limits != WAIT_PART_DOWN)
+        rc_best = ESLURM_REQUESTED_PART_CONFIG_UNAVAILABLE;
+    else
+        rc_best = ESLURM_PARTITION_DOWN;
+}
 ```
 
 ### 關鍵觀察
@@ -117,6 +266,7 @@ flowchart TD
 - `_qos_part_check()` 本身只負責**檢測**違規，不負責決定是否拒絕
 - 最終的拒絕/接受由 `_valid_job_part()` 根據 `EnforcePartLimits` 決定
 - 預設配置下（`EnforcePartLimits=NO`），只有 `ESLURM_ACCESS_DENIED` 和 `ESLURM_USER_ID_MISSING` 會導致提交被拒絕，節點數超限**不會**
+- **`YES` = `ANY`** — 這是有意設計，不是 bug。要嚴格限制所有 partition 需明確設定 `ALL`
 - 對 `min_nodes` 也有相同的對稱檢查（使用 `QOS_FLAG_PART_MIN_NODE`）
 
 ---
@@ -176,6 +326,78 @@ if (reason != WAIT_NO_REASON)
 | 失敗結果 | 拒絕提交或忽略 | 設定 pending reason |
 | 執行時機 | 一次（提交時） | 每個排程週期持續檢查 |
 | 條件改善後 | N/A | 自動清除 reason，允許排程 |
+
+---
+
+## 提交時的 QOS TRES 限制與 `DenyOnLimit`
+
+**重要**：上述三階段主要討論 **Partition 節點數限制**（由 `EnforcePartLimits` 控制）。QOS 自身的 TRES 資源限制（如 `MaxTRESPerUser`、`MaxTRESPerJob`、`MaxTRESPerAccount`）有獨立的檢查機制，由 **`DenyOnLimit` flag** 控制。
+
+### 提交時的 TRES 檢查 (`_qos_policy_validate`)
+
+**原始碼位置**：`src/slurmctld/acct_policy.c:1685-1760`
+
+提交時 `acct_policy_validate()` → `_qos_policy_validate()` → `_validate_tres_limits_for_qos()` 會檢查所有 TRES 限制，但有一個關鍵前置條件：
+
+```c
+// acct_policy.c:1351-1352 — _validate_tres_limits_for_qos()
+if (!strict_checking)
+    return true;    // ← 直接跳過所有 TRES 限制檢查！
+```
+
+`strict_checking` 的值取決於 QOS 是否設定了 `DenyOnLimit`：
+
+```c
+// acct_policy.c:3290-3293 — _acct_policy_validate()
+strict_checking = (qos_ptr_1->flags & QOS_FLAG_DENY_LIMIT);
+if (qos_ptr_2 && !strict_checking)
+    strict_checking = qos_ptr_2->flags & QOS_FLAG_DENY_LIMIT;
+```
+
+### 排程時的 TRES 檢查 (`_qos_job_runnable_post_select`)
+
+**原始碼位置**：`src/slurmctld/acct_policy.c:2326-2730`
+
+排程階段的 `_qos_job_runnable_post_select()` 使用 `_validate_tres_usage_limits_for_qos()` 檢查 TRES 使用量。此函式中 `safe_limits` 參數被硬編碼為 `true`（第 2690 行），**不受 `DenyOnLimit` 影響**，永遠執行檢查。
+
+```c
+// acct_policy.c:2686-2690 — 排程時的 MaxTRESPerUser 檢查
+tres_usage = _validate_tres_usage_limits_for_qos(
+    &tres_pos,
+    qos_ptr->max_tres_pu_ctld, qos_out_ptr->max_tres_pu_ctld,
+    tres_req_cnt, used_limits->tres,
+    NULL, job_ptr->limit_set.tres, true);   // ← 硬編碼 safe_limits=true
+```
+
+### `DenyOnLimit` 行為對照表
+
+| 階段 | 沒有 `DenyOnLimit` | 有 `DenyOnLimit` |
+|---|---|---|
+| **提交時** | 跳過 TRES 檢查，作業進入佇列 | 嚴格檢查，超限則拒絕（`ESLURM_ACCOUNTING_POLICY`） |
+| **排程時** | 檢查 TRES 使用量，超限則 PENDING hold | N/A（已在提交時被拒絕） |
+
+### 配置範例
+
+```bash
+# 建立 QOS，設定 MaxTRESPerUser 但不在提交時拒絕（預設行為）
+sacctmgr add qos normal MaxTRESPerUser=cpu=2
+# 結果：提交 -n 8 的作業會被接受，排程時 PENDING hold
+
+# 建立 QOS，設定 MaxTRESPerUser 且在提交時拒絕
+sacctmgr add qos strict MaxTRESPerUser=cpu=2 flags=DenyOnLimit
+# 結果：提交 -n 8 的作業會被立即拒絕
+```
+
+### `EnforcePartLimits` vs `DenyOnLimit` — 兩個獨立的維度
+
+| 控制項 | 控制機制 | 影響範圍 |
+|---|---|---|
+| **`EnforcePartLimits`** | `slurm.conf` 全域設定 | Partition 的 MaxNodes / MinNodes / MaxTime 限制 |
+| **`DenyOnLimit`** | QOS flag（每個 QOS 獨立設定） | QOS 的 MaxTRESPerUser / MaxTRESPerJob / MaxTRESPerAccount / GrpTRES 等 |
+
+兩者完全獨立運作：
+- `EnforcePartLimits=ALL` + 無 `DenyOnLimit`：Partition 限制在提交時拒絕，QOS TRES 限制只在排程時生效
+- `EnforcePartLimits=NO` + 有 `DenyOnLimit`：Partition 限制不在提交時拒絕，QOS TRES 限制在提交時拒絕
 
 ---
 
@@ -330,7 +552,7 @@ flowchart TD
         S1 -->|是| S2{"QOS premium 有\nPartitionMaxNodes?"}
         S2 -->|有| S_PASS
         S2 -->|沒有| S3{"EnforcePartLimits?"}
-        S3 -->|"YES / ALL"| S_REJECT["拒絕提交"]
+        S3 -->|"ANY（=YES）或 ALL"| S_REJECT["拒絕提交"]
         S3 -->|"NO（預設）"| S_PASS
     end
 
@@ -374,7 +596,7 @@ flowchart TD
 
 ### 最大節點數情境
 
-> 以下假設 `EnforcePartLimits=NO`（預設值）。若設為 `YES`/`ALL`，情境 1 會在提交時被直接拒絕。
+> 以下假設 `EnforcePartLimits=NO`（預設值）且為單一 Partition。若設為 `YES`（=`ANY`）或 `ALL`，情境 1 會在提交時被直接拒絕。
 
 | 情境 | Partition Max | QOS MaxNodes/Job | QOS Flag | 提交結果 | 排程器狀態 | 排程 max_nodes |
 |---|---|---|---|---|---|---|
@@ -547,6 +769,12 @@ flowchart LR
 | `_job_runnable_test2()` | `src/slurmctld/job_scheduler.c:404` | 排程器呼叫 `job_limits_check()` 的入口 |
 | `get_node_cnts()` | `src/slurmctld/node_scheduler.c:3144` | 排程決策階段節點數計算 |
 | `acct_policy_get_max_nodes()` | `src/slurmctld/acct_policy.c:4402` | 會計政策最大節點數查詢 |
+| `acct_policy_validate()` | `src/slurmctld/acct_policy.c:3635` | 提交時 QOS/Association TRES 限制驗證入口 |
+| `_qos_policy_validate()` | `src/slurmctld/acct_policy.c:1685` | 提交時 QOS TRES 限制檢查（受 `DenyOnLimit` 控制） |
+| `_validate_tres_limits_for_qos()` | `src/slurmctld/acct_policy.c:1336` | TRES 靜態限制驗證（`strict_checking` 閘門） |
+| `_qos_job_runnable_post_select()` | `src/slurmctld/acct_policy.c:2326` | 排程時 QOS TRES 使用量檢查（含 `MaxTRESPerUser`） |
+| `_foreach_valid_part()` | `src/slurmctld/job_mgr.c:6699` | 多 partition 逐一檢查（`ANY` vs `ALL` 差異實現） |
+| `parse_part_enforce_type()` | `src/common/slurm_protocol_defs.c:5661` | `EnforcePartLimits` 設定值解析（`YES`→`ANY`） |
 | `acct_policy_set_qos_order()` | `src/slurmctld/acct_policy.c:5254` | 雙 QOS 優先順序決策 |
 | `QOS_FLAG_*` 定義 | `slurm/slurmdb.h:126-133` | QOS 旗標位元定義 |
 
@@ -560,3 +788,4 @@ flowchart LR
 | `QOS_FLAG_PART_MAX_NODE` | `PartitionMaxNodes` | 允許作業的 max_nodes 超過 Partition MaxNodes |
 | `QOS_FLAG_PART_TIME_LIMIT` | `PartitionTimeLimit` | 允許作業的時間限制超過 Partition MaxTime |
 | `QOS_FLAG_OVER_PART_QOS` | `OverPartQOS` | Job QOS 優先於 Partition QOS（改變會計限制的優先順序） |
+| `QOS_FLAG_DENY_LIMIT` | `DenyOnLimit` | 提交時嚴格檢查 TRES 限制（MaxTRESPerUser/Job/Account 等），超過則拒絕提交。未設定此 flag 時，這些限制只在排程階段生效（作業進佇列後 PENDING hold） |
