@@ -471,6 +471,10 @@ if (job_ptr->qos_ptr->flags & QOS_FLAG_OVER_PART_QOS) {
 
 **主要 QOS 的限制優先採用；輔助 QOS 只在主要 QOS 未設定某項限制時才填補。**
 
+> **注意：分割區 QOS 的限制是在 QOS 級別強制執行，不是每個分割區獨立計算。** 如果同一個 QOS 被分配給多個分割區作為 Partition QOS，這些分割區會**共享**同一個使用量計數器。例如 QOS 設定了 `GrpTRES=cpu=20` 並被分配給 partA 和 partB 兩個分割區，使用者在兩個分割區合計最多只能使用 20 個 CPU，而不是每個分割區各 20 個。
+>
+> 這是因為 QOS 的使用量追蹤存放在 `slurmdb_qos_usage_t` 結構中（`slurm/slurmdb.h:959-989`），每個 QOS 物件只有一個 `grp_used_tres` 陣列，所有引用該 QOS 的分割區共用同一份計數。
+
 ```mermaid
 flowchart LR
     subgraph default_order["預設順序"]
@@ -557,6 +561,15 @@ sacctmgr add qos normal MaxTRESPerUser=cpu=2
 sacctmgr add qos strict MaxTRESPerUser=cpu=2 flags=DenyOnLimit
 # 結果：提交 -n 8 的作業會被立即拒絕
 ```
+
+> **DenyOnLimit 對 Grp 限制的特殊處理**：設定 `DenyOnLimit` 後，GrpTRES 等群組限制也會被視為 Max 限制（上限），在提交時拒絕超過的作業。具體來說，`_validate_tres_limits_for_qos()` 會對 `grp_tres_array` 和 `max_tres_array` 取 `MIN()` 作為有效上限（`acct_policy.c:1356`），然後檢查作業請求量是否超過此上限（`acct_policy.c:1378`）。未設 `DenyOnLimit` 時，GrpTRES 只在排程時做聚合使用量檢查（已用量 + 請求量 > 限制），不影響提交。
+>
+> ```bash
+> # 範例：GrpTRES 在 DenyOnLimit 下的行為
+> sacctmgr add qos limited GrpTRES=cpu=20 flags=DenyOnLimit
+> # 提交 -n 25 的作業 → 立即拒絕（25 > 20，GrpTRES 被當作上限）
+> # 若不設 DenyOnLimit → 作業進入佇列，排程時若 cpu 已用 + 25 > 20 才 hold
+> ```
 
 ### 查看 QOS 設定
 
@@ -658,3 +671,7 @@ Partition 限制代表「物理分區的建議邊界」，QOS 會計限制代表
 | `QOS_FLAG_PART_TIME_LIMIT` | `PartitionTimeLimit` | 允許作業的時間限制超過 Partition MaxTime |
 | `QOS_FLAG_OVER_PART_QOS` | `OverPartQOS` | Job QOS 優先於 Partition QOS（改變會計限制的優先順序） |
 | `QOS_FLAG_DENY_LIMIT` | `DenyOnLimit` | 提交時嚴格檢查 TRES 限制，超過則拒絕。未設定時只在排程階段 PENDING hold |
+
+### GRES 類型限制的已知限制
+
+當 GRES 設定了帶類型的限制（如 `MaxTRESPerUser=gres/gpu:tesla=1`），使用者若以通用方式請求（`--gres=gpu:2`），類型限制**不會被強制執行**。這是 Slurm 的設計限制，需搭配 `job_submit` lua 外掛來強制使用者指定 GPU 類型才能完整控制。
