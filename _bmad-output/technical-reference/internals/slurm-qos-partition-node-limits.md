@@ -473,7 +473,7 @@ if (job_ptr->qos_ptr->flags & QOS_FLAG_OVER_PART_QOS) {
 
 > **注意：分割區 QOS 的限制是在 QOS 級別強制執行，不是每個分割區獨立計算。** 如果同一個 QOS 被分配給多個分割區作為 Partition QOS，這些分割區會**共享**同一個使用量計數器。例如 QOS 設定了 `GrpTRES=cpu=20` 並被分配給 partA 和 partB 兩個分割區，使用者在兩個分割區合計最多只能使用 20 個 CPU，而不是每個分割區各 20 個。
 >
-> 這是因為 QOS 的使用量追蹤存放在 `slurmdb_qos_usage_t` 結構中（`slurm/slurmdb.h:959-989`），每個 QOS 物件只有一個 `grp_used_tres` 陣列，所有引用該 QOS 的分割區共用同一份計數。
+> 這是因為 QOS 的使用量追蹤存放在 `slurmdb_qos_usage_t` 結構中（`slurm/slurmdb.h:959-989`），每個 QOS 物件只有一個 `grp_used_tres` 陣列，所有引用該 QOS 的分割區共用同一份計數。此外，`_foreach_part_qos_limit_usage()`（`acct_policy.c:886-901`）中有明確的去重邏輯 — 當作業跨多個分割區且它們使用相同的 Partition QOS 時，使用量只會被調整一次，避免重複計算。
 
 ```mermaid
 flowchart LR
@@ -655,6 +655,7 @@ Partition 限制代表「物理分區的建議邊界」，QOS 會計限制代表
 | `_qos_job_runnable_post_select()` | `src/slurmctld/acct_policy.c:2326` | 排程時 QOS TRES 使用量檢查（含 `MaxTRESPerUser`） |
 | `acct_policy_get_max_nodes()` | `src/slurmctld/acct_policy.c:4402` | 會計政策最大節點數查詢 |
 | `acct_policy_set_qos_order()` | `src/slurmctld/acct_policy.c:5254` | 雙 QOS 優先順序決策 |
+| `_foreach_part_qos_limit_usage()` | `src/slurmctld/acct_policy.c:886` | 多分割區 Partition QOS 使用量去重 |
 | `parse_part_enforce_type()` | `src/common/slurm_protocol_defs.c:5661` | `EnforcePartLimits` 設定值解析 |
 | `_validate_accounting_storage_enforce()` | `src/common/read_config.c:3420` | `AccountingStorageEnforce` 設定值解析 |
 | `ACCOUNTING_ENFORCE_*` 定義 | `src/common/read_config.h:66-73` | 會計強制旗標位元定義 |
