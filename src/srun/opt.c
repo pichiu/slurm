@@ -636,6 +636,7 @@ env_vars_t env_vars[] = {
   { "SLURMD_DEBUG", LONG_OPT_SLURMD_DEBUG },
   { "SRUN_CONTAINER", LONG_OPT_CONTAINER },
   { "SRUN_CONTAINER_ID", LONG_OPT_CONTAINER_ID },
+  { "SRUN_CONTAINER_TYPE", LONG_OPT_CONTAINER_TYPE },
   { "SLURM_DEBUG", 'v'},
   { "SRUN_ERROR", 'e' },
   { "SRUN_INPUT", 'i' },
@@ -797,6 +798,8 @@ static void _opt_args(int argc, char **argv, int het_job_offset)
 		setenvf(NULL, "SLURM_CONTAINER", "%s", opt.container);
 	if (opt.container_id && !getenv("SLURM_CONTAINER_ID"))
 		setenvf(NULL, "SLURM_CONTAINER_ID", "%s", opt.container_id);
+	if (opt.container_type && !getenv("SLURM_CONTAINER_TYPE"))
+		setenvf(NULL, "SLURM_CONTAINER_TYPE", "%s", opt.container_type);
 
 	if (opt.network)
 		setenvf(NULL, "SLURM_NETWORK", "%s", opt.network);
@@ -1486,8 +1489,9 @@ static void _usage(void)
 "            [--jobid=id] [--verbose] [--slurmd_debug=#] [--gres=list]\n"
 "            [-T threads] [-W sec] [--gres-flags=opts]\n"
 "            [--licenses=names] [--clusters=cluster_names]\n"
-"            [--qos=qos] [--time-min=minutes]\n"
-"            [--contiguous] [--mincpus=n] [--mem=MB] [--tmp=MB] [-C list]\n"
+"            [--qos=qos] [--time-min=minutes] [--contiguous]\n"
+"            [--mincpus=n] [--mem=MB] [--tmp=MB] [-C list]\n"
+"            [--container=path] [--container-id=id] [--container-type=type]\n"
 "            [--mpi=type] [--account=name] [--dependency=type:jobid[+time]]\n"
 "            [--kill-on-bad-exit] [--propagate[=rlimits] [--comment=name]\n"
 "            [--cpu-bind=...] [--mem-bind=...] [--network=type]\n"
@@ -1537,8 +1541,6 @@ static void _help(void)
 "  -c, --cpus-per-task=ncpus   number of cpus required per task\n"
 "      --comment=name          arbitrary comment\n"
 "      --compress[=library]    data compression library used with --bcast\n"
-"      --container             Path to OCI container bundle\n"
-"      --container-id          OCI container ID\n"
 "      --cpu-freq=min[-max[:gov]] requested cpu frequency (and governor)\n"
 "  -d, --dependency=type:jobid[:time] defer job until condition on jobid is satisfied\n"
 "      --deadline=time         remove the job if no ending possible before\n"
@@ -1642,6 +1644,11 @@ static void _help(void)
 "  -w, --nodelist=hosts...     request a specific list of hosts\n"
 "  -x, --exclude=hosts...      exclude a specific list of hosts\n"
 "  -Z, --no-allocate           don't allocate nodes (must supply -w)\n"
+"\n"
+"Container options:\n"
+"      --container=path        Container path\n"
+"      --container-id=id       Container identifier\n"
+"      --container-type=type   Container Type\n"
 "\n"
 "Consumable resources related options:\n"
 "      --exact                 use only the resources requested for the step\n"
