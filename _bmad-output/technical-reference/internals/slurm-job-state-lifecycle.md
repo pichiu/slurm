@@ -60,15 +60,23 @@ uint32_t base_state = job_ptr->job_state & JOB_STATE_BASE;
 
 | 旗標 | 意義 |
 |------|------|
-| `JOB_COMPLETING` | 作業正在完成過程中（epilog 正在執行） |
-| `JOB_CONFIGURING` | 節點正在進行組態設定（例如開機中） |
-| `JOB_POWER_UP_NODE` | 等待節點啟動電源 |
-| `JOB_REQUEUE` | 作業正在重新排入佇列 |
-| `JOB_REQUEUE_HOLD` | 被保留的作業正在重新排入佇列 |
-| `JOB_SPECIAL_EXIT` | 作業以特殊結束碼終止 |
-| `JOB_RESIZING` | 作業正在調整大小 |
-| `JOB_REVOKED` | 兄弟作業已被撤銷 |
-| `JOB_SIGNALING` | 正在發送訊號 |
+| `JOB_COMPLETING` | 作業已完成或取消，正在執行清理任務，包括 [epilog](../../../doc/html/zh-tw/administrators/prolog_epilog.md) 腳本 |
+| `JOB_CONFIGURING` | 節點正在進行組態設定（例如開機或重新開機中） |
+| `JOB_POWER_UP_NODE` | 作業已分配到關機狀態的節點，等待節點啟動電源 |
+| `JOB_LAUNCH_FAILED` | 在選定節點上啟動失敗，包括 prolog 失敗等狀況 |
+| `JOB_REQUEUE` | 作業正在重新排入佇列（例如因搶佔或使用者請求） |
+| `JOB_REQUEUE_HOLD` | 重新排入佇列但被保留，需手動 `scontrol release` 才會重新排程 |
+| `JOB_REQUEUE_FED` | 因聯邦（Federation）設定中兄弟作業的條件而重新排入佇列 |
+| `JOB_SPECIAL_EXIT` | 與 `REQUEUE_HOLD` 相同，但用於識別特殊結束碼情況 |
+| `JOB_RESIZING` | 作業正在調整大小，防止發生衝突的作業變更 |
+| `JOB_RESV_DEL_HOLD` | 因預約（Reservation）被刪除而保留 |
+| `JOB_REVOKED` | 因聯邦設定中兄弟作業的條件而被撤銷 |
+| `JOB_SIGNALING` | 正在等待向作業發送訊號 |
+| `JOB_STAGE_OUT` | 正在輸出資料（burst buffer） |
+| `JOB_STOPPED` | 收到 SIGSTOP 信號，暫停作業但不釋放資源 |
+| `JOB_UPDATE_DB` | 正在將作業更新資訊發送到資料庫 |
+
+> **注意：** 使用 `squeue` 或 `sacct` 查看作業時，如果有可識別的旗標，工具會顯示旗標而非基本狀態；REST API 則會同時回傳基本狀態和所有旗標。詳見 [作業狀態代碼](../../../doc/html/zh-tw/users/job_state_codes.md)。
 
 一個作業可以處於 `JOB_COMPLETE | JOB_COMPLETING` 狀態，表示基本狀態為「已完成」但 epilog 仍在某些節點上執行。
 
@@ -88,12 +96,13 @@ stateDiagram-v2
     RUNNING --> CANCELLED : 使用者取消
     RUNNING --> TIMEOUT : 達到時間限制
     RUNNING --> NODE_FAIL : 節點故障
-    RUNNING --> PREEMPTED : 被較高優先權作業搶佔
+    RUNNING --> PREEMPTED : 被搶佔（PreemptMode=CANCEL）
+    RUNNING --> PENDING : 被搶佔（PreemptMode=REQUEUE）
+    RUNNING --> SUSPENDED : 被搶佔（PreemptMode=SUSPEND）<br/>或管理員暫停
     RUNNING --> OOM : 記憶體不足
-    RUNNING --> SUSPENDED : 管理員暫停
     RUNNING --> DEADLINE : 達到截止期限
 
-    SUSPENDED --> RUNNING : 管理員恢復
+    SUSPENDED --> RUNNING : 搶佔者完成後由 Gang Scheduler 恢復<br/>或管理員手動恢復
     SUSPENDED --> CANCELLED : 使用者取消
 
     PENDING --> BOOT_FAIL : 節點開機失敗
@@ -109,6 +118,8 @@ stateDiagram-v2
     DEADLINE --> [*]
     OOM --> [*]
 ```
+
+> **關於搶佔（Preemption）的補充說明：** 被搶佔的作業不一定會進入終止狀態 `PREEMPTED`。根據 `PreemptMode` 的設定，作業可能被取消（`CANCEL`，進入 `PREEMPTED`）、重新排入佇列（`REQUEUE`，回到 `PENDING`）、或暫停（`SUSPEND`，進入 `SUSPENDED` 並等待 Gang Scheduler 恢復）。詳見 [搶佔機制](../../../doc/html/zh-tw/administrators/preempt.md)。
 
 ### 1.4 終止狀態與活躍狀態
 
@@ -245,6 +256,41 @@ flowchart TD
 ```
 
 當此情況發生時，Slurm 會記錄警告訊息，建議管理員調查相關節點，因為卡住的步驟可能代表更深層的問題。
+
+### 3.5 COMPLETING 狀態卡住的常見原因
+
+清除條件第 3 項（`!IS_JOB_COMPLETING`）在實務上是最常導致作業記錄無法被清除的原因之一。根據[疑難排解指南](../../../doc/html/zh-tw/administrators/troubleshoot.md)的說明，作業和節點卡在 COMPLETING 狀態通常是因為：
+
+- **檔案系統問題：** 作業程序正在進行 I/O 操作而無法被終止（即使收到 SIGKILL）
+- **Epilog 腳本異常：** [Epilog](../../../doc/html/zh-tw/administrators/prolog_epilog.md) 腳本執行時間過長或掛起。注意：Epilog 失敗會導致節點被設為 DRAIN 狀態
+- **不可終止的程序：** 某些核心態 I/O 等待的程序無法被信號終止
+
+**管理員處理方式：**
+
+```bash
+# 查看卡在 COMPLETING 的作業
+squeue -t COMPLETING
+
+# 方法 1：強制取消
+scancel -f <job_id>
+
+# 方法 2：將節點設為 DOWN 再恢復（清除卡住的程序）
+scontrol update NodeName=<node> State=down Reason="clearing stuck job"
+scontrol update NodeName=<node> State=resume
+
+# 方法 3：使用 UnkillableStepProgram 自動化處理
+# 在 slurm.conf 中設定：
+# UnkillableStepProgram=/path/to/handler
+# UnkillableStepTimeout=60
+```
+
+### 3.6 高吞吐量環境下的 MinJobAge 調校
+
+在[高吞吐量運算](../../../doc/html/zh-tw/administrators/high_throughput.md)環境中，MinJobAge 的設定尤其重要。大量短作業的快速輪替會讓已完成的作業記錄迅速累積記憶體壓力。高吞吐量環境的關鍵考量：
+
+- **MinJobAge 建議設為 60 秒**：減少記憶體中的已完成作業記錄數量
+- **避免使用 PrologSlurmctld/EpilogSlurmctld**：每個作業啟動都需建立獨立執行緒並獲取寫入鎖定，這會嚴重限制排程器吞吐量，同時也會延遲 `epilog_running` 旗標的清除
+- **搭配 `MaxJobCount` 設定**：控制 slurmctld 可追蹤的最大作業數量（預設 10,000）
 
 ---
 
@@ -420,4 +466,19 @@ flowchart LR
 
 ---
 
-*本文件為基於目前程式碼庫的 Slurm 原始碼分析結果。特定行號與實作細節可能隨程式碼演進而變動。*
+## 8. 交叉參照
+
+本文件的內容已與 `doc/html/zh-tw/` 目錄下的官方繁體中文文件進行比對驗證：
+
+| 參照文件 | 相關章節 | 驗證結果 |
+|----------|----------|----------|
+| [作業狀態代碼](../../../doc/html/zh-tw/users/job_state_codes.md) | 1.1、1.2 | 基本狀態完全一致；本文件已補充官方文件中列出的完整旗標清單 |
+| [作業結束代碼](../../../doc/html/zh-tw/users/job_exit_code.md) | 1.4 | 終止狀態分類一致；結束代碼格式為 `exit_code:signal` |
+| [Prolog 和 Epilog 指南](../../../doc/html/zh-tw/administrators/prolog_epilog.md) | 3.2、3.5 | 印證 epilog 失敗導致節點 DRAIN 的行為，解釋了 `epilog_running` 作為清除阻擋條件的必要性 |
+| [高吞吐量運算](../../../doc/html/zh-tw/administrators/high_throughput.md) | 3.1、3.6、6.1 | MinJobAge 預設 300 秒確認一致；高吞吐量環境建議 60 秒，與本文建議表吻合 |
+| [搶佔機制](../../../doc/html/zh-tw/administrators/preempt.md) | 1.3 | 補正了狀態圖：被搶佔的作業依 PreemptMode 可回到 PENDING（REQUEUE）或進入 SUSPENDED（SUSPEND） |
+| [疑難排解指南](../../../doc/html/zh-tw/administrators/troubleshoot.md) | 3.5 | 印證 COMPLETING 狀態卡住的常見原因（檔案系統問題、不可終止程序） |
+
+---
+
+*本文件為基於目前程式碼庫的 Slurm 原始碼分析結果，並已與官方繁體中文文件交叉驗證。特定行號與實作細節可能隨程式碼演進而變動。*
