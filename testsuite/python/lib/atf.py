@@ -138,6 +138,112 @@ def get_coredumps():
     return list(core_set)
 
 
+def classify_coredump(bin_path, bt_file, failures, xfailures):
+    """
+    Append a known reason either to failures or xfailures lists based on a list
+    of known coredumps, either to ignore them in old versions, or to report a
+    failure message that helps QA operations.
+    """
+    bt = run_command_output(f"cat {bt_file}", quiet=True, fatal=True)
+
+    reason = "Ticket Unknown: Fixed issue in slurmdbd in 25.05: SIGABRT in _connection_fini_callback(): pthread_mutex_lock(): Invalid argument"
+    component = "sbin/slurmdbd"
+    if (
+        component in bin_path
+        and "Program terminated with signal SIGABRT" in bt
+        and "src/common/log.c" in bt
+        and "src/slurmdbd/rpc_mgr.c" in bt
+        and "_connection_fini_callback" in bt
+        and "_service_connection" in bt
+        and "fatal_abort" in bt
+        and "pthread_mutex_lock" in bt
+    ):
+        if get_version(component) >= (25, 5):
+            failures.append(reason)
+        else:
+            xfailures.append(reason)
+        return
+
+    reason = "Ticket 24853: Issue in slurmdbd in 25.05: SIGABRT in slurm_persist_conn_recv_thread_init: service_conn"
+    component = "sbin/slurmdbd"
+    if (
+        component in bin_path
+        and "Program terminated with signal SIGABRT" in bt
+        and "src/common/persist_conn.c" in bt
+        and "src/slurmdbd/rpc_mgr.c" in bt
+        and "slurm_persist_conn_recv_thread_init" in bt
+        and "service_conn" in bt
+        and "__xassert_failed" in bt
+    ):
+        if get_version(component) >= (25, 5):
+            failures.append(reason)
+        else:
+            xfailures.append(reason)
+        return
+
+    reason = "Ticket 22310: Known issue when shutting down slurmdbd: SIGSEGV in _service_connection(): if (service_conn->conn->callback_fini)"
+    component = "sbin/slurmdbd"
+    if (
+        component in bin_path
+        and "Program terminated with signal SIGSEGV" in bt
+        and "src/common/persist_conn.c" in bt
+        and "(service_conn->pconn->callback_fini)" in bt
+    ):
+        if get_version(component) >= (25, 11, 4):
+            failures.append(reason)
+        else:
+            xfailures.append(reason)
+        return
+
+    reason = "Ticket 22326: Known issue in slurmdbd: SIGABRT in  _list_find_first_lock(): Assertion (l != NULL)"
+    component = "sbin/slurmdbd"
+    if (
+        component in bin_path
+        and "Program terminated with signal SIGABRT" in bt
+        and "src/common/list.c" in bt
+        and "src/slurmdbd/proc_req.c" in bt
+        and "_list_find_first_lock" in bt
+        and "_process_service_connection" in bt
+        and "l != NULL" in bt
+    ):
+        if get_version(component) >= (25, 5):
+            failures.append(reason)
+        else:
+            xfailures.append(reason)
+        return
+
+    reason = "Ticket 24562: Known issue when shutting down slurmdbd: SIGABORT in acct_storage_g_close_connection(): Assertion (plugin_inited != PLUGIN_NOT_INITED)"
+    component = "sbin/slurmdbd"
+    if (
+        component in bin_path
+        and "Program terminated with signal SIGABRT" in bt
+        and "src/interfaces/accounting_storage.c" in bt
+        and "acct_storage_g_close_connection" in bt
+        and "plugin_inited != PLUGIN_NOT_INITED" in bt
+    ):
+        # TODO: An initial fix landed in 25.11.4+, but it seems not fully fixed.
+        if get_version(component) >= (25, 11, 4):
+            failures.append(reason)
+        else:
+            xfailures.append(reason)
+        return
+
+    reason = "Ticket 24822: Known issue shutting down slurmd with OpenSSL"
+    component = "sbin/slurmd"
+    if (
+        component in bin_path
+        and "Program terminated with signal SIGABRT" in bt
+        and "OPENSSL_sk_free" in bt
+        and "OPENSSL_cleanup" in bt
+        and "_int_free_maybe_consolidate" in bt
+    ):
+        # TODO: Add version when t24822 is fixed
+        failures.append(reason)
+        return
+
+    failures.append(f"Unknown coredump detected, see {bt_file}")
+
+
 def run_command(
     command,
     fatal=False,
